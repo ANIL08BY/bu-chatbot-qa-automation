@@ -1,0 +1,12 @@
+name: QA Pipeline Placeholder
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  placeholder-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Not
+        run: echo "GitHub Actions CI/CD adımları buraya eklenecek."
