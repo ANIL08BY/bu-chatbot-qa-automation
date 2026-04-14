@@ -1,6 +1,0 @@
-pytest
-pytest-asyncio
-playwright
-ragas
-locust
-allure-pytest
