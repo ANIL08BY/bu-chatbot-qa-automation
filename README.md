@@ -26,10 +26,11 @@ Projeyi kendi bilgisayarınızda çalıştırmak için aşağıdaki adımları i
 
 ## Sistem Genel Mimarisi
 
+```mermaid
 graph TB
-%% Kullanıcı ve CI/CD Tetikleyicileri
-User((Üniversite<br>Kullanıcısı))
-Developer((Geliştirici / <br>SQA Mühendisi))
+    %% Kullanıcı ve CI/CD Tetikleyicileri
+    User((Üniversite<br>Kullanıcısı))
+    Developer((Geliştirici / <br>SQA Mühendisi))
 
     subgraph QASystem["QA & Test Otomasyon Ekosistemi (Senin Projen)"]
         direction TB
@@ -96,3 +97,4 @@ Developer((Geliştirici / <br>SQA Mühendisi))
     class CICD,Orchestrator,E2E,Load,AIEval,Sec,Report qa;
     class UI,API,Pipeline,LLM core;
     class DB,VDB db;
+```
