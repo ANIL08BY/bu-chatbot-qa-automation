@@ -1,4 +1,4 @@
-# BU Chatbot - Yazılım Kalite Güvence (SQA) Otomasyonu
+# BU Chatbot - Test Otomasyonu
 
 Bu depo, "BU Chatbot" sisteminin uçtan uca (E2E), API, performans ve Yapay Zeka (LLM) doğruluk metriklerinin test edilmesi için kurulmuş profesyonel bir test otomasyon altyapısıdır.
 
@@ -30,7 +30,7 @@ Projeyi kendi bilgisayarınızda çalıştırmak için aşağıdaki adımları i
 graph TB
     %% Kullanıcı ve CI/CD Tetikleyicileri
     User((Üniversite<br>Kullanıcısı))
-    Developer((Geliştirici / <br>SQA Mühendisi))
+    Developer((Geliştirici / <br>Test Mühendisi))
 
     subgraph QASystem["QA & Test Otomasyon Ekosistemi (Senin Projen)"]
         direction TB
