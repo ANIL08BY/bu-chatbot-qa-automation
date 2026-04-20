@@ -1,5 +1,21 @@
+import sys
+import os
+
+# Backend VS Code projesi klasörünün tam yolunu (Absolute Path) buraya ekle!
+BACKEND_PROJE_YOLU = r"C:\Users\ANIL\OneDrive\Masaüstü\Mezuniyet Projesi 4.Sınıf Bahar Dönemi Dersi\AI Destekli Chatbot Projesi\Kodlar\Backend\backend"
+
+if BACKEND_PROJE_YOLU not in sys.path:
+    sys.path.append(BACKEND_PROJE_YOLU)
+
+# Şimdi test projem, Backend klasörünün içini kendi klasörüymüş gibi okuyabilir!
+from backend.main import app as fastapi_app
+
 import pytest
+import pytest_asyncio
+from httpx import AsyncClient
 from playwright.sync_api import sync_playwright
+from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock
 
 # @pytest.fixture(scope="session"): Bu ayar, tarayıcının her testte tekrar tekrar açılıp kapanmasını engeller.
 # "session" (oturum) seviyesinde olduğu için tüm test paketi koşumu boyunca tarayıcı ana motoru sadece BİR KERE açılır. 
@@ -43,3 +59,40 @@ def page(browser_context):
     
     # Test fonksiyonu işini bitirdiğinde (test geçse de, çökse de) bu sekmeyi anında kapat.
     page.close()
+
+@pytest_asyncio.fixture
+async def async_client():
+    """
+    FastAPI uygulamasını ayağa kaldırarak doğrudan arka yüze (API) 
+    sanal HTTP istekleri atmamızı sağlayan Asenkron Test İstemcisi.
+    """
+
+    # Yeni httpx sürümleri için ASGITransport katmanı oluştur.
+    transport = ASGITransport(app=fastapi_app)
+
+    # app=fastapi_app YERİNE transport=transport parametresini kullan. 
+    # httpx kütüphanesinin yeni sürümlerinde FastAPI uygulamasını doğrudan app= parametresiyle vermek yerine, bir "Taşıyıcı" (ASGITransport) katmanı üzerinden vermek zorunlu
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+@pytest.fixture
+def mock_db_and_query(mocker):
+    """
+    Gerçek veritabanı ve LLM bağlanmadan (çünkü şema daha yok)
+    API Endpointlerinin (Uç Nokta) çalışıp çalışmadığını test edebilmemiz için
+    sistemin arkaplan bileşenlerini (DB loglama ve RAG query) izole eder.
+    """
+    # 1. RAG Motoru (ask_question) hep başarılı dönmüş gibi davran (Halüsinasyon testi değil)
+    mocker.patch(
+        "backend.main.ask_question",
+        return_value={
+            "answer": "Bu test ortamından dönen sahte cevaptır.",
+            "sources":[],
+            "category": "Test Kategori",
+            "engine": "Test v1"
+        }
+    )
+    
+    # 2. Asenkron DB log kaydını atla (Şema şu an olmadığı için test patlamasın)
+    # db.log_interaction ASENKRON (await) olduğu için AsyncMock ZORUNLUDUR!
+    mocker.patch("backend.main.db.log_interaction", new_callable=AsyncMock)
