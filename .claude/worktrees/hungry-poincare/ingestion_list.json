@@ -1,0 +1,93 @@
+[
+  {
+    "url": "https://admin.belek.edu.tr/kalite/db3f483a-8be8-434d-b49c-d0dca4ecc334.pdf",
+    "category": "lisans akademik takvim",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://admin.belek.edu.tr/kalite/b8cd867b-b5b1-4547-88b3-213d837258a2.pdf",
+    "category": "lisansüstü akademik takvim",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://kutuphane.belek.edu.tr/Home/Page/88",
+    "category": "kutuphane hakkinda",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://kutuphane.belek.edu.tr/Home/Contact/0",
+    "category": "kutuphane iletisim",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://admin.belek.edu.tr/kalite/a9bcb335-e82c-416c-82b6-b4db05c35812.pdf",
+    "category": "öğrenci toplulukları",
+    "priority": 2,
+    "crawl_linked_docs": false
+
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/72",
+    "category": "engelli öğrenci",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/AntalyaBelekUniversitesi/Duyurular/A1151.pdf",
+    "category": "yurtlar ve konaklama",
+    "priority": 1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/ulasim.pdf",
+    "category": "ulaşım",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/AntalyaBelekUniversitesi/Duyurular/A1178.pdf",
+    "category": "burs olanakları",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Akademi/yatay001.pdf",
+    "category": "kurum içi yatay geçiş",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Akademi/yatay002.pdf",
+    "category": "kurumlar arası yatay geçiş",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Akademi/yatay003.pdf",
+    "category": "merkezi yerleştirme puanı ile yatay geçiş",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Akademi/yatay006.pdf",
+    "category": "eğitim öğretim ücretleri",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/37",
+    "category": "antalya kültür ve eğitim vakfı, akev",
+    "priority":1,
+    "crawl_linked_docs":false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/54",
+    "category": "vizyon, misyon ve temel değerler",
+    "priority":1,
+    "crawl_linked_docs":false
+  }
+]

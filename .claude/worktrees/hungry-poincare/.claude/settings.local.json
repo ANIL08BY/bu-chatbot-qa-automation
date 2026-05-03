@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(venv/Scripts/python -c \":*)",
+      "Bash(find /c/Users/yusuf/Desktop/bu-chatbot/backend/vector_db -type f -name *.pkl -o -name *.json -o -name *.db)",
+      "Bash(wc -l /c/Users/yusuf/Desktop/bu-chatbot/backend/crawl_cache/*.json)",
+      "Bash(venv/Scripts/python -u -m backend.ingest_crawl --from-cache)",
+      "Bash(dir \"C:\\\\Users\\\\yusuf\\\\Desktop\\\\bu-chatbot\\\\backend\\\\_vector_db_new\")",
+      "Bash(venv/Scripts/python -u -c \":*)",
+      "Bash(grep -n \"paraphrase-multilingual\\\\|all-MiniLM\" C:/Users/yusuf/Desktop/bu-chatbot/backend/*.py)",
+      "Bash(grep -n \"model_name=\" C:/Users/yusuf/Desktop/bu-chatbot/backend/*.py)",
+      "Bash(dir backend:*)",
+      "Bash(dir backenddata:*)",
+      "Bash(dir backendcrawl:*)",
+      "Bash(venv/Scripts/python -c \"import pdfplumber; import docx; print\\(''pdfplumber OK, python-docx OK''\\)\")"
+    ]
+  }
+}

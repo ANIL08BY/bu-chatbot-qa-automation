@@ -1,0 +1,327 @@
+"""
+Soru-Cevap Motoru V2 — Qdrant Hybrid Search + Cross-Encoder Reranking.
+
+query.py (V1) → ChromaDB MMR + BM25 pickle + RRF (manuel)
+query_v2.py   → Qdrant built-in hybrid (dense + BM42) + bge-reranker-v2-m3
+
+Fallback:
+  Qdrant erişilemezse otomatik olarak V1 pipeline'a geçer.
+
+Lazy initialization: Tüm modeller ilk istekte yüklenir.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import threading
+
+from dotenv import load_dotenv
+
+from backend.pipeline_v2.config_v2 import KNOWN_CATEGORIES_V2
+from backend.rag_common import (
+    CATEGORY_LABELS,
+    LIST_RE,
+    PROMPT_TEMPLATE,
+    analyze_query,
+    compute_k,
+    format_history,
+    invoke_fallback,
+    is_rate_limit,
+)
+from backend.rag_config import rag_config as _cfg
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(current_dir, "..", ".env"))
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Sabitler
+# ---------------------------------------------------------------------------
+
+_QDRANT_PATH       = os.getenv("QDRANT_PATH", "")   # Dolu → local disk modu
+_QDRANT_HOST       = os.getenv("QDRANT_HOST", "localhost")
+_QDRANT_PORT       = int(os.getenv("QDRANT_PORT", "6333"))
+_COLLECTION        = "belek_v2"
+_EMBEDDING_MODEL   = (
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+)
+_RERANKER_MODEL    = "BAAI/bge-reranker-base"
+_DENSE_VECTOR_NAME = "dense"
+
+# ---------------------------------------------------------------------------
+# Lazy-loaded state
+# ---------------------------------------------------------------------------
+
+_embedding_model  = None
+_reranker         = None
+_qdrant_client    = None
+_llm_chain        = None
+_v2_available     = None   # None = henüz test edilmedi
+_init_v2_lock     = threading.Lock()
+
+
+def _init_v2() -> bool:
+    """
+    V2 bileşenlerini yükle.
+    Returns True başarılı, False Qdrant erişilemezse.
+    """
+    global _embedding_model, _reranker, _qdrant_client, _llm_chain, _v2_available
+
+    if _v2_available is not None:
+        return _v2_available
+
+    with _init_v2_lock:
+        if _v2_available is not None:
+            return _v2_available
+
+        try:
+            # Embedding modeli
+            if _embedding_model is None:
+                from sentence_transformers import SentenceTransformer
+                logger.info("V2 embedding modeli yükleniyor: %s", _EMBEDDING_MODEL)
+                _embedding_model = SentenceTransformer(_EMBEDDING_MODEL)
+
+            # Reranker
+            if _reranker is None:
+                from sentence_transformers import CrossEncoder
+                logger.info("Reranker yükleniyor: %s", _RERANKER_MODEL)
+                _reranker = CrossEncoder(_RERANKER_MODEL, max_length=_cfg.reranker_max_length)
+
+            # Qdrant bağlantısı — QDRANT_PATH varsa local disk, yoksa host:port
+            if _qdrant_client is None:
+                from qdrant_client import QdrantClient
+                if _QDRANT_PATH:
+                    _qdrant_client = QdrantClient(path=_QDRANT_PATH)
+                    logger.info("Qdrant local disk modu: %s/%s", _QDRANT_PATH, _COLLECTION)
+                else:
+                    _qdrant_client = QdrantClient(host=_QDRANT_HOST, port=_QDRANT_PORT, timeout=10)
+                    logger.info("Qdrant bağlantısı OK: %s:%d/%s", _QDRANT_HOST, _QDRANT_PORT, _COLLECTION)
+                _qdrant_client.get_collection(_COLLECTION)
+
+            # LLM chain — V2'ye özgü, V1'e bağımlılık yok
+            if _llm_chain is None:
+                from backend.rag_common import build_chain
+                _llm_chain = build_chain()
+
+            _v2_available = True
+            logger.info("Query V2 hazır.")
+
+        except Exception as exc:
+            logger.warning(
+                "Query V2 başlatılamadı (%s) — V1 fallback aktif.", exc
+            )
+            _v2_available = False
+
+        return _v2_available
+
+
+# ---------------------------------------------------------------------------
+# Hybrid Search (Qdrant)
+# ---------------------------------------------------------------------------
+
+def _hybrid_search_v2(
+    search_query: str,
+    category: str = "genel",
+    k: int = 10,
+) -> tuple[list[dict], str]:
+    """
+    Qdrant hybrid arama: dense + BM42.
+
+    Returns:
+        (results, effective_category)
+    """
+    import time
+    from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+    _t_embed = time.perf_counter()
+    q_vec = _embedding_model.encode(
+        search_query, normalize_embeddings=True
+    ).tolist()
+    logger.info("⏱ embed=%.3fs", time.perf_counter() - _t_embed)
+
+    apply_filter = (
+        category != "genel"
+        and category in KNOWN_CATEGORIES_V2
+    )
+
+    qdrant_filter = None
+    if apply_filter:
+        qdrant_filter = Filter(
+            must=[FieldCondition(key="doc_category", match=MatchValue(value=category))]
+        )
+
+    def _search(flt, limit: int):
+        _t_q = time.perf_counter()
+        response = _qdrant_client.query_points(
+            collection_name=_COLLECTION,
+            query=q_vec,
+            using=_DENSE_VECTOR_NAME,
+            query_filter=flt,
+            limit=limit,
+            with_payload=True,
+        )
+        logger.info("⏱ qdrant_query(limit=%d)=%.3fs", limit, time.perf_counter() - _t_q)
+        return response.points
+
+    multiplier = 3 if k >= 20 else 2
+    results = _search(qdrant_filter, k * multiplier)
+
+    if apply_filter and len(results) < _cfg.min_category_results:
+        logger.info("Kategori '%s' için az sonuç, fallback.", category)
+        results = _search(None, k * multiplier)
+        apply_filter = False
+
+    effective = category if apply_filter else "genel"
+    payloads = [r.payload for r in results]
+    return payloads, effective
+
+
+# ---------------------------------------------------------------------------
+# Cross-Encoder Reranker
+# ---------------------------------------------------------------------------
+
+def _rerank(
+    query: str,
+    docs: list[dict],
+    top_k: int,
+) -> list[dict]:
+    """BAAI/bge-reranker-v2-m3 ile çapraz kodlayıcı yeniden sıralama."""
+    if not docs:
+        return []
+
+    pairs = [(query, doc.get("text", "")) for doc in docs]
+    try:
+        scores = _reranker.predict(pairs, show_progress_bar=False)
+    except Exception as exc:
+        logger.warning("Reranker hatası: %s — sıralama korunuyor.", exc)
+        return docs[:top_k]
+
+    ranked = sorted(
+        zip(scores, docs), key=lambda x: x[0], reverse=True
+    )
+    return [doc for _, doc in ranked[:top_k]]
+
+
+# ---------------------------------------------------------------------------
+# Ana fonksiyon
+# ---------------------------------------------------------------------------
+
+def ask_question_v2(
+    query: str,
+    history: list[dict] | None = None,
+) -> dict:
+    """
+    V2 pipeline ile soru yanıtla.
+    Qdrant erişilemezse → V1 ask_question()'a fallback.
+
+    Returns:
+        {"answer": str, "sources": list[dict], "category": str, "engine": "v2"|"v1"}
+    """
+    import time
+
+    _t_total = time.perf_counter()
+    timings: dict[str, float] = {}
+
+    # ── Init ──────────────────────────────────────────────────────────────
+    _t = time.perf_counter()
+    v2_ok = _init_v2()
+    timings["init"] = time.perf_counter() - _t
+
+    if not v2_ok:
+        from backend.query import ask_question as ask_v1
+        result = ask_v1(query, history)
+        return {**result, "engine": "v1"}
+
+    # ── Sorgu analizi (Groq) ───────────────────────────────────────────────
+    _t = time.perf_counter()
+    detected, search_query = analyze_query(query)
+    timings["analyze_query"] = time.perf_counter() - _t
+
+    k = compute_k(query)
+
+    # ── Embedding + Qdrant arama ───────────────────────────────────────────
+    _t = time.perf_counter()
+    try:
+        raw_docs, effective_category = _hybrid_search_v2(
+            search_query, category=detected, k=k
+        )
+    except Exception as exc:
+        logger.error("Qdrant arama hatası: %s — V1 fallback.", exc)
+        from backend.query import ask_question as ask_v1
+        result = ask_v1(query, history)
+        return {**result, "engine": "v1"}
+    timings["embed_and_search"] = time.perf_counter() - _t
+
+    # ── Reranking ─────────────────────────────────────────────────────────
+    is_list_query = bool(LIST_RE.search(query))
+    _t = time.perf_counter()
+    if is_list_query:
+        reranked = raw_docs[:k]
+        timings["rerank"] = 0.0
+    else:
+        reranked = _rerank(query, raw_docs, top_k=k)
+        timings["rerank"] = time.perf_counter() - _t
+
+    # ── Context ve kaynak kartları ────────────────────────────────────────
+    context = "\n\n".join(doc.get("text", "") for doc in reranked)
+
+    sources: list[dict] = []
+    for doc in reranked[:3]:
+        page = doc.get("page")
+        sources.append({
+            "page":    (page + 1) if isinstance(page, int) else "?",
+            "url":     doc.get("url", ""),
+            "snippet": doc.get("text", "")[:200].strip(),
+        })
+
+    history_text = format_history(history)
+
+    label = CATEGORY_LABELS.get(effective_category, effective_category)
+    category_context = (
+        f"\nŞu an '{label}' kategorisindeki belgelere dayanarak cevap veriyorsun.\n"
+        if effective_category != "genel" else ""
+    )
+
+    payload = {
+        "context":          context,
+        "question":         query,
+        "history":          history_text,
+        "category_context": category_context,
+    }
+
+    # ── LLM ──────────────────────────────────────────────────────────────
+    _t = time.perf_counter()
+    try:
+        response = _llm_chain.invoke(payload)
+    except Exception as exc:
+        if not is_rate_limit(exc):
+            raise
+        response = invoke_fallback(payload)
+    timings["llm"] = time.perf_counter() - _t
+
+    timings["total"] = time.perf_counter() - _t_total
+
+    # ── Timing özeti logla ────────────────────────────────────────────────
+    logger.info(
+        "⏱ LATENCY | k=%d | list=%s | cat=%s | "
+        "init=%.2fs | analyze=%.2fs | embed+search=%.2fs | "
+        "rerank=%.2fs | llm=%.2fs | TOTAL=%.2fs",
+        k,
+        is_list_query,
+        effective_category,
+        timings["init"],
+        timings["analyze_query"],
+        timings["embed_and_search"],
+        timings["rerank"],
+        timings["llm"],
+        timings["total"],
+    )
+
+    return {
+        "answer":   response.content,
+        "sources":  sources,
+        "category": effective_category,
+        "engine":   "v2",
+        "timings":  timings,
+    }

@@ -1,0 +1,40 @@
+# Environment — hiçbir zaman commit etme
+.env
+.env.*
+!.env.example
+*.env
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Dagster
+.tmp_dagster_home*/
+
+# Pipeline cache / data
+/backend/vector_db/
+/backend/pipeline_cache/
+/backend/pipeline_v2_cache/
+/local_sources/
+
+# Qdrant local disk (Git'e ekleme — büyük binary dosyalar)
+/qdrant_local/
+
+# Node
+/frontend/node_modules/
+/frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
