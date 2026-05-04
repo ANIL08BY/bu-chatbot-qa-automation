@@ -3,7 +3,7 @@
 ## Veri Akışı
 
 ```
-ingestion_list.json (16 kaynak, 16 kategori)
+ingestion_list.json (54 kaynak, 54 kategori)
         │
         ├─ raw_web_pages ──── Firecrawl API (HTML → Markdown)
         ├─ raw_pdf_documents ─ Docling + TableFormer (PDF → Markdown)
@@ -55,7 +55,7 @@ Kullanıcı sorusu
 
 ## Kategori Sistemi
 
-- 16 kategori `ingestion_list.json`'daki `category` alanından otomatik türetilir
+- 54 kategori `ingestion_list.json`'daki `category` alanından otomatik türetilir
 - Slug normalizasyon: `"burs olanakları"` → `"burs-olanaklari"` (Türkçe karakter → ASCII)
 - Sorgu analizi LLM ile kategori eşleşmesi yapar
 - Eşleşen kategoride < 3 sonuç varsa otomatik `"genel"` fallback
