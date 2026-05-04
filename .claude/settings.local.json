@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh pr create --title 'feat: Pipeline V2 — Dagster ingestion, hybrid Qdrant arama, frontend yenilemesi' --body ' *)",
-      "Bash(python3 -c \"from qdrant_client.models import PointStruct; help\\(PointStruct.__init__\\)\")"
-    ]
-  }
-}
