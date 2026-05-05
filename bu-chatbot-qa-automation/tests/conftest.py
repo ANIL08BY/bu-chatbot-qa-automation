@@ -96,3 +96,67 @@ def mock_db_and_query(mocker):
     # 2. Asenkron DB log kaydını atla (Şema şu an olmadığı için test patlamasın)
     # db.log_interaction ASENKRON (await) olduğu için AsyncMock ZORUNLUDUR!
     mocker.patch("backend.main.db.log_interaction", new_callable=AsyncMock)
+
+    # ==============================================================================
+# BÖLÜM 3: QDRANT (VEKTÖR DB) IN-MEMORY TEST MİMARİSİ (MADDE 6.1 - 6.3)
+# ==============================================================================
+
+@pytest.fixture
+def mock_qdrant_memory():
+    """
+    6.1 In-Memory Konfigürasyon:
+    Docker veya harici sunucuya ihtiyaç duymadan sadece RAM üzerinde çalışan 
+    izole bir Qdrant anlamsal uzayı (Schemaless) yaratır. Test bitince otomatik silinir.
+    """
+    # location=":memory:" parametresi sistemin tamamen RAM'de yaşamasını sağlar
+    client = QdrantClient(location=":memory:")
+    
+    collection_name = "belek_v2_test"
+    
+    # 6.2 Vektör Geometrisi Tasarımı (Dense 768 Boyutlu MPNET - Cosine Similarity)
+    client.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(
+            size=768, 
+            distance=Distance.COSINE
+        )
+    )
+    
+    yield client
+    
+    # Teardown (Yıkım): Test bitince RAM'deki izleri temizle.
+    client.delete_collection(collection_name=collection_name)
+
+
+@pytest.fixture
+def populate_mock_vectors():
+    """
+    6.3 Vektör Yükü Şeması:
+    Ragas testleri ve alıntı (Citation) doğrulaması için In-Memory Qdrant 
+    istemcisine sahte (mock) vektörler ve payload'lar basan yardımcı araçtır.
+    """
+    def _populate(client: QdrantClient, collection_name: str = "belek_v2_test"):
+        # 768 boyutlu sahte bir embedding vektörü üretiyoruz (Sadece matematiği simüle etmek için)
+        dummy_vector = [0.1] * 768 
+        
+        # Çizelge 6.1'e birebir uyumlu Payload (Metadata) yapısı
+        mock_payload = {
+            "url": "https://belek.edu.tr/burs-yonetmeligi",
+            "title": "Burs ve Kredi Olanakları",
+            "category": "Burs",
+            "chunk_idx": 0
+        }
+        
+        client.upsert(
+            collection_name=collection_name,
+            points=[
+                PointStruct(
+                    id=str(uuid.uuid4()), 
+                    vector=dummy_vector, 
+                    payload=mock_payload
+                )
+            ]
+        )
+        return True
+        
+    return _populate
