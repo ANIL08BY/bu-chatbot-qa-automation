@@ -9,21 +9,21 @@ Belek Üniversitesinin yönetmelik ve akademik dokümanlarına dayalı RAG mimar
 ## Mimari
 
 ```
-ingestion_list.json → Dagster Pipeline V2 → Qdrant (dense + BM42)
-                                                    ↓
-React Frontend → FastAPI /ask → Query V2 (hybrid + cross-encoder reranker)
-                    │             ↓ (Qdrant erişilemezse)
-                    │           Query V1 (ChromaDB + BM25 + RRF)
-                    │             ↓ (LLM rate limit)
-                    │           Model fallback (70b → llama-4-scout → 8b)
+ingestion_list.json → Dagster Pipeline → Qdrant (dense + BM42)
+                                                ↓
+React Frontend → FastAPI /ask → Qdrant hybrid search
+                    │              ↓
+                    │           Cross-encoder reranker
+                    │              ↓
+                    │           LLM (rate limit → model fallback)
                     │
                     └→ PostgreSQL log_interaction()
 ```
 
-- **V2 (birincil):** Qdrant hybrid (dense 768d + BM42 sparse) + `BAAI/bge-reranker-base` cross-encoder
-- **V1 (fallback):** ChromaDB MMR + BM25 pickle + Reciprocal Rank Fusion
+- **Retrieval:** Qdrant hybrid (dense 768d + BM42 sparse) + `BAAI/bge-reranker-base` cross-encoder
 - **LLM fallback:** `llama-3.3-70b-versatile` → `meta-llama/llama-4-scout-17b-16e-instruct` → `llama-3.1-8b-instant`
 - **54 metadata kategorisi** otomatik olarak `ingestion_list.json`'dan türetilir (her kaynak kendi kategorisinde)
+- **Hata davranışı:** Qdrant/Groq erişilemezse RuntimeError → HTTP 503. Sessiz fallback yok.
 
 Detaylı mimari: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
@@ -140,6 +140,12 @@ CREATE TABLE system_logs (
 
 > **Not:** `backend/db.py` `belek_chatbot` şema prefix'iyle yazıyor. Tabloları başka bir şemaya kuracaksanız `db.py`'deki `INSERT INTO belek_chatbot.*` ifadelerini güncellemeniz gerekir.
 
+> **RLS Uyarısı:** Eğer PostgreSQL'de Row-Level Security (örn. Supabase) etkinse, `db.py`'nin bağlandığı kullanıcının INSERT yetkisi olmalıdır. Aksi halde `log_interaction()` sessizce başarısız olur. Çözüm seçenekleri:
+> 1. DB kullanıcısına `BYPASSRLS` ver: `ALTER USER bot_user BYPASSRLS;`
+> 2. Veya tabloya açık INSERT policy yaz: `CREATE POLICY bot_insert ON belek_chatbot.sessions FOR INSERT TO bot_user WITH CHECK (true);`
+>
+> Bu fix uygulandıktan sonra DB hataları log'larda **stack trace ile birlikte** görünür hale gelir (`logger.exception`).
+
 ### 4. Veri pipeline'ını çalıştır
 
 ```bash
@@ -218,7 +224,7 @@ Detaylı kullanım her script'in dosyasındaki docstring'de.
 | Method | Endpoint | Rate Limit | Açıklama |
 |--------|----------|:----------:|----------|
 | POST | `/ask` | 50/dk | Soru sor — cevap + kaynak + kategori + motor |
-| GET | `/health` | 200/dk | Bağımlılık durumu (Qdrant, Groq key, ChromaDB, PostgreSQL) |
+| GET | `/health` | 200/dk | Bağımlılık durumu (Qdrant, Groq key, PostgreSQL) |
 | GET | `/docs` | — | Swagger UI |
 
 Limit aşılırsa `429 Too Many Requests` döner.
@@ -255,12 +261,12 @@ Limit aşılırsa `429 Too Many Requests` döner.
   "api": "ok",
   "groq_key": "ok",
   "qdrant": "ok",
-  "chromadb": "ok",
   "postgres": "ok"
 }
 ```
 
-Bütün bileşenler `ok` ise HTTP 200; herhangi biri `unavailable`/`missing` ise HTTP 503.
+**Kritik bileşenler** (`api`, `groq_key`, `qdrant`) `ok` ise HTTP 200; aksi halde 503.
+PostgreSQL opsiyoneldir — `disabled` veya `unavailable` durumu API'yi servis dışı bırakmaz.
 
 ---
 
@@ -279,10 +285,9 @@ bu-chatbot/
 ├── backend/
 │   ├── main.py               # FastAPI uygulaması (rate limit, lifespan)
 │   ├── db.py                 # PostgreSQL logging (asyncpg)
-│   ├── query.py              # V1 RAG motoru (ChromaDB + BM25)
-│   ├── query_v2.py           # V2 RAG motoru (Qdrant + Reranker)
-│   ├── rag_common.py         # Paylaşılan: chain, prompt, kategori, fallback
-│   ├── rag_config.py         # Merkezi RAG konfigürasyonu (k, weights, vb.)
+│   ├── query_v2.py           # RAG motoru (Qdrant + Reranker + LLM)
+│   ├── rag_common.py         # Paylaşılan: chain, prompt, kategori, model fallback
+│   ├── rag_config.py         # Merkezi RAG konfigürasyonu (k değerleri vb.)
 │   ├── prompts/              # Externalized prompt template'leri
 │   └── pipeline_v2/          # Dagster data pipeline
 │       ├── assets/           # Asset'ler (web, pdf, clean, chunk, qdrant)

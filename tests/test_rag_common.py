@@ -12,7 +12,6 @@ from backend.rag_common import (
     compute_k,
     format_history,
     is_rate_limit,
-    rrf_weights,
 )
 from backend.rag_config import RAGConfig, rag_config
 
@@ -27,7 +26,9 @@ class TestRAGConfig:
         assert rag_config.k_list == 40
         assert rag_config.k_aggregation == 18
         assert rag_config.k_specific == 5
-        assert rag_config.noise_threshold == 0.35
+        assert rag_config.reranker_max_length == 512
+        assert rag_config.max_history_messages == 6
+        assert rag_config.min_category_results == 3
 
     def test_frozen(self):
         import pytest
@@ -80,25 +81,6 @@ class TestComputeK:
 
     def test_general_query(self):
         assert compute_k("Kayıt nasıl yapılır?") == rag_config.k_general
-
-
-# ---------------------------------------------------------------------------
-# rrf_weights
-# ---------------------------------------------------------------------------
-
-class TestRRFWeights:
-    def test_aggregation_bm25_dominant(self):
-        bm25_w, sem_w = rrf_weights("Toplam kaç burs var?")
-        assert bm25_w > sem_w
-
-    def test_general_semantic_dominant(self):
-        bm25_w, sem_w = rrf_weights("Kayıt nasıl yapılır?")
-        assert sem_w > bm25_w
-
-    def test_weights_sum_to_one(self):
-        for q in ["Kaç madde?", "Madde 5", "Genel soru"]:
-            bm25_w, sem_w = rrf_weights(q)
-            assert abs(bm25_w + sem_w - 1.0) < 0.01
 
 
 # ---------------------------------------------------------------------------

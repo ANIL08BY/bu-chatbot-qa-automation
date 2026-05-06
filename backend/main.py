@@ -77,7 +77,8 @@ def _preload_models() -> None:
         _init_v2()
         logger.info("Model preload tamamlandı — ilk istek hazır.")
     except Exception as exc:
-        logger.warning("Model preload başarısız (ilk istek yükleyecek): %s", exc)
+        # Stack trace ile logla — Qdrant/Groq/.env hatalarının gerçek kaynağı görünür olsun
+        logger.exception("Model preload başarısız (ilk istek tekrar deneyecek): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +182,8 @@ async def chat(request: Request, body: ChatRequest):
                     error_status=error_status,
                 )
             except Exception as exc:
-                logger.warning("DB log hatası: %s", exc)
+                # Stack trace ile — RLS gibi sessiz fail'lerin kaynağı görünür olsun
+                logger.exception("DB log hatası: %s", exc)
 
 
 @app.get("/health")
@@ -207,16 +209,15 @@ async def health(request: Request):
     except Exception:
         checks["qdrant"] = "unavailable"
 
-    # ChromaDB varlık kontrolü (V1 fallback)
-    vector_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vector_db")
-    checks["chromadb"] = "ok" if os.path.isdir(vector_db_path) else "missing"
-
-    # PostgreSQL bağlantı kontrolü
+    # PostgreSQL bağlantı kontrolü (opsiyonel — kayıt için kullanılır)
     pool = db.get_pool()
     if pool:
         checks["postgres"] = await db.check_health(pool)
     else:
-        checks["postgres"] = "unavailable"
+        checks["postgres"] = "disabled"
 
-    all_ok = all(v == "ok" for v in checks.values())
+    # 503 yalnızca kritik bileşenler (api, groq_key, qdrant) için
+    # PostgreSQL opsiyonel: "disabled" veya "unavailable" durumu API'yi servis dışı bırakmaz
+    critical = ("api", "groq_key", "qdrant")
+    all_ok = all(checks.get(k) == "ok" for k in critical)
     return JSONResponse(checks, status_code=200 if all_ok else 503)

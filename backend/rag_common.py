@@ -1,8 +1,8 @@
 """
-Ortak RAG yardımcıları — query.py ve query_v2.py tarafından paylaşılır.
+Ortak RAG yardımcıları — query_v2.py tarafından kullanılır.
 
-Bu modül LLM, embedding veya vector store YÜKLEMEz; yalnızca saf fonksiyonlar
-ve konfigürasyon sağlar.
+Bu modül vector store YÜKLEMEz; yalnızca saf fonksiyonlar, prompt template,
+LLM chain factory ve sorgu analizi sağlar.
 """
 from __future__ import annotations
 
@@ -132,17 +132,8 @@ def analyze_query(query: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Sorgu ağırlıklandırma ve boyutu
+# Sorgu boyutu — k değeri sorgu tipine göre dinamik
 # ---------------------------------------------------------------------------
-
-def rrf_weights(query: str) -> tuple[float, float]:
-    """(bm25_w, semantic_w) döndür — sorgu tipine göre dinamik."""
-    if AGGREGATION_RE.search(query):
-        return _cfg.bm25_weight_aggregation, 1.0 - _cfg.bm25_weight_aggregation
-    if re.search(r"madde\s+\d+", query, re.IGNORECASE):
-        return _cfg.bm25_weight_specific, 1.0 - _cfg.bm25_weight_specific
-    return _cfg.bm25_weight_general, 1.0 - _cfg.bm25_weight_general
-
 
 def compute_k(query: str) -> int:
     """Sorgu tipine göre kaç chunk getirileceğini belirle."""
@@ -196,7 +187,7 @@ def invoke_fallback(payload: dict):
 
 
 # ---------------------------------------------------------------------------
-# LLM zinciri oluşturma — V1 ve V2 tarafından bağımsız olarak kullanılır
+# LLM zinciri oluşturma
 # ---------------------------------------------------------------------------
 
 def build_chain():
@@ -204,8 +195,6 @@ def build_chain():
     ChatGroq + prompt template zinciri döndürür.
 
     GROQ_API_KEY env değişkeninden okunur; eksikse RuntimeError fırlatır.
-    Hem query.py (V1) hem query_v2.py (V2) bu fonksiyonu çağırarak kendi
-    zincirlerini bağımsız başlatır — iki motor arasında global state paylaşılmaz.
     """
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_groq import ChatGroq

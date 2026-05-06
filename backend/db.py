@@ -142,4 +142,6 @@ async def log_interaction(
                 )
 
     except Exception as exc:
-        logger.warning("DB log_interaction hatası (yanıt etkilenmedi): %s", exc)
+        # Stack trace ile logla — RLS bypass eksikliği gibi sessiz fail'lerin gerçek
+        # kaynağı görünür olsun. Yanıt akışı etkilenmez (logging best-effort'tur).
+        logger.exception("DB log_interaction hatası (yanıt etkilenmedi): %s", exc)
