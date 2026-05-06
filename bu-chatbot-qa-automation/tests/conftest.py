@@ -1,17 +1,24 @@
 import sys
 import os
-
 import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 
-# Backend VS Code projesi klasörünün tam yolunu (Absolute Path) buraya ekle!
-BACKEND_PROJE_YOLU = r"C:\Users\ANIL\OneDrive\Masaüstü\Mezuniyet Projesi 4.Sınıf Bahar Dönemi Dersi\AI Destekli Chatbot Projesi\Kodlar\Backend\backend"
+# ==============================================================================
+# DİNAMİK YOL (DYNAMIC PATH) YAPILANDIRMASI
+# ==============================================================================
+# Hardcoded OneDrive yolu yerine, bu dosyanın konumundan yola çıkarak 
+# üst klasördeki 'backend' dizinini dinamik olarak buluyoruz.
+MEVCUT_DIZIN = os.path.dirname(os.path.abspath(__file__))
+
+# QA klasöründen (bu-chatbot-qa-automation) iki tık yukarı çıkıp backend'i bul
+BACKEND_PROJE_YOLU = os.path.abspath(os.path.join(MEVCUT_DIZIN, "../../backend"))
 
 if BACKEND_PROJE_YOLU not in sys.path:
     sys.path.append(BACKEND_PROJE_YOLU)
 
 # Şimdi test projem, Backend klasörünün içini kendi klasörüymüş gibi okuyabilir!
+from backend.main import app as fastapi_app
 from backend.main import app as fastapi_app
 
 import pytest
