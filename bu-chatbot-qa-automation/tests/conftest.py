@@ -1,6 +1,10 @@
 import sys
 import os
 
+import uuid
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance, PointStruct
+
 # Backend VS Code projesi klasörünün tam yolunu (Absolute Path) buraya ekle!
 BACKEND_PROJE_YOLU = r"C:\Users\ANIL\OneDrive\Masaüstü\Mezuniyet Projesi 4.Sınıf Bahar Dönemi Dersi\AI Destekli Chatbot Projesi\Kodlar\Backend\backend"
 
@@ -160,3 +164,36 @@ def populate_mock_vectors():
         return True
         
     return _populate
+
+    # ==============================================================================
+# BÖLÜM 4: POSTGRESQL VERİTABANI TEST MİMARİSİ (RESTRICT TESTLERİ İÇİN)
+# ==============================================================================
+
+@pytest_asyncio.fixture
+async def db_pool():
+    """
+    Yusuf'un db.py mimarisini kullanan, testler için gerçek PostgreSQL bağlantı havuzu.
+    Not: Bu testlerin çalışması için yerel bilgisayarda (veya .env ile)
+    belek_chatbot şemasına sahip bir PostgreSQL veritabanının ayakta olması gerekir.
+    """
+    from backend import db  # Yusuf'un veritabanı modülü
+    
+    # .env dosyasındaki DB_DSN'i al (Yusuf'un sisteminde nasıl tanımlıysa)
+    # Eğer .env kullanmıyorsanız, geçici olarak buraya postgres:// URL'sini hardcode edebilirsiniz:
+    # dsn = "postgresql://kullanici_adi:sifre@localhost:5432/veritabani_adi"
+    dsn = os.getenv("DB_DSN", "postgresql://postgres:postgres@localhost:5432/postgres")
+    
+    # 1. SETUP (Hazırlık): Yusuf'un init_pool fonksiyonunu çalıştır
+    await db.init_pool(dsn)
+    
+    # Yusuf'un global _pool nesnesini al
+    pool = db.get_pool()
+    
+    if pool is None:
+        pytest.fail("Veritabanı bağlantı havuzu (Pool) başlatılamadı! Lütfen PostgreSQL'in açık olduğundan ve DB_DSN ayarlarının doğruluğundan emin olun.")
+        
+    # 2. YIELD (Teslim): Havuzu teste gönder
+    yield pool
+    
+    # 3. TEARDOWN (Temizlik): Test bitince bağlantıları güvenli şekilde kapat
+    await db.close_pool()
