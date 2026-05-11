@@ -1,4 +1,8 @@
 import pytest
+
+# Yusuf veritabanı altyapısını tamamen hazır edene kadar bu testi atlıyoruz.
+pytestmark = pytest.mark.skip(reason="Yerel veritabanı altyapısı bekleniyor, test ertelendi.")
+
 import asyncio
 # asyncpg hatalarını yakalamak için
 try:
