@@ -11,14 +11,14 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 # üst klasördeki 'backend' dizinini dinamik olarak buluyoruz.
 MEVCUT_DIZIN = os.path.dirname(os.path.abspath(__file__))
 
-# QA klasöründen (bu-chatbot-qa-automation) iki tık yukarı çıkıp backend'i bul
-BACKEND_PROJE_YOLU = os.path.abspath(os.path.join(MEVCUT_DIZIN, "../../backend"))
+# Sadece iki üst klasöre çık ('BU-Chatbot-Final' ana dizinine ulaş).
+# Python bu sayede ana dizindeki 'backend' klasörünü direkt olarak tanıyabilecek.
+ANA_PROJE_YOLU = os.path.abspath(os.path.join(MEVCUT_DIZIN, "../../"))
 
-if BACKEND_PROJE_YOLU not in sys.path:
-    sys.path.append(BACKEND_PROJE_YOLU)
+if ANA_PROJE_YOLU not in sys.path:
+    sys.path.append(ANA_PROJE_YOLU)
 
-# Şimdi test projem, Backend klasörünün içini kendi klasörüymüş gibi okuyabilir!
-from backend.main import app as fastapi_app
+# Artık Python, BU-Chatbot-Final klasörünün içindeki 'backend' modülünü sorunsuz bulabilir!
 from backend.main import app as fastapi_app
 
 import pytest
