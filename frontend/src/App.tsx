@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot } from 'lucide-react';
 import axios from 'axios';
 import { ChatHeader } from './components/ChatHeader';
-import { ChatMessage, type SourceCard } from './components/ChatMessage';
+import { ChatMessage, type SourceCard, type FeedbackValue } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { SettingsModal } from './components/SettingsModal';
 
@@ -16,6 +16,9 @@ interface Message {
   isUser: boolean;
   sources?: SourceCard[];
   isError?: boolean;
+  messageDbId?: number;
+  feedback?: FeedbackValue;
+  isGreeting?: boolean;
 }
 
 interface BackendSource {
@@ -26,7 +29,7 @@ interface BackendSource {
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: GREETING, isUser: false },
+    { id: '1', text: GREETING, isUser: false, isGreeting: true },
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -80,6 +83,8 @@ export default function App() {
         text: response.data.answer,
         isUser: false,
         sources: sources.filter((s) => s.url),
+        messageDbId: typeof response.data.message_id === 'number' ? response.data.message_id : undefined,
+        feedback: null,
       };
       setMessages((prev) => [...prev, aiResponse]);
     } catch (error) {
@@ -109,8 +114,34 @@ export default function App() {
     }
   }, [lastUserMessage, handleSendMessage]);
 
+  const handleFeedback = useCallback(async (msgId: string, messageDbId: number | undefined, value: 'like' | 'dislike') => {
+    // Aynı değere tekrar tıklarsa toggle-off: görsel durum geri alınır.
+    let nextValue: FeedbackValue = value;
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== msgId) return m;
+        nextValue = m.feedback === value ? null : value;
+        return { ...m, feedback: nextValue };
+      })
+    );
+
+    // Toggle-off veya DB ID yoksa → backend çağrısı yapma (sadece görsel feedback).
+    if (nextValue === null || messageDbId === undefined) return;
+
+    try {
+      await axios.post(`${API_URL}/feedback`, {
+        message_id: messageDbId,
+        is_positive: nextValue === 'like',
+      });
+    } catch (error) {
+      console.error('Feedback gönderilemedi:', error);
+      // Ağ hatası: görsel durumu geri al.
+      setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, feedback: null } : m)));
+    }
+  }, []);
+
   const handleNewChat = () => {
-    setMessages([{ id: Date.now().toString(), text: GREETING, isUser: false }]);
+    setMessages([{ id: Date.now().toString(), text: GREETING, isUser: false, isGreeting: true }]);
     setLastUserMessage('');
   };
 
@@ -143,6 +174,13 @@ export default function App() {
               isDarkMode={isDarkMode}
               isError={message.isError}
               onRetry={message.isError ? handleRetry : undefined}
+              messageDbId={message.messageDbId}
+              feedback={message.feedback ?? null}
+              onFeedback={
+                !message.isUser && !message.isError && !message.isGreeting
+                  ? (value) => handleFeedback(message.id, message.messageDbId, value)
+                  : undefined
+              }
             />
           ))}
 

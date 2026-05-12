@@ -128,6 +128,12 @@ class ChatRequest(BaseModel):
     history: list[HistoryMessage] = []
 
 
+class FeedbackRequest(BaseModel):
+    message_id: int = Field(..., gt=0)
+    is_positive: bool
+    comment: str | None = Field(default=None, max_length=2000)
+
+
 # ---------------------------------------------------------------------------
 # Endpoint'ler
 # ---------------------------------------------------------------------------
@@ -139,6 +145,7 @@ async def chat(request: Request, body: ChatRequest):
     start = time.monotonic()
     error_status: str | None = None
     result: dict = {}
+    response_payload: dict | None = None
 
     try:
         question = _sanitize_input(body.question)
@@ -147,12 +154,14 @@ async def chat(request: Request, body: ChatRequest):
 
         history = [{"role": m.role, "content": m.content} for m in body.history]
         result = ask_question(question, history)
-        return {
+        response_payload = {
             "answer":   result["answer"],
             "sources":  result["sources"],
             "category": result.get("category", "genel"),
             "engine":   result.get("engine", "v1"),
+            "message_id": None,  # finally bloğunda DB kaydından sonra doldurulur
         }
+        return response_payload
     except HTTPException:
         raise
     except RuntimeError as e:
@@ -171,7 +180,7 @@ async def chat(request: Request, body: ChatRequest):
         pool = db.get_pool()
         if pool and result:
             try:
-                await db.log_interaction(
+                asst_msg_id = await db.log_interaction(
                     pool,
                     user_ip=request.client.host if request.client else "unknown",
                     question=body.question,
@@ -180,8 +189,31 @@ async def chat(request: Request, body: ChatRequest):
                     latency_ms=latency_ms,
                     error_status=error_status,
                 )
+                # Yanıt henüz istemciye gönderilmedi (finally return'den önce çalışır):
+                # dict mutasyonu serileştirmeye yansır.
+                if asst_msg_id is not None and response_payload is not None:
+                    response_payload["message_id"] = asst_msg_id
             except Exception as exc:
                 logger.warning("DB log hatası: %s", exc)
+
+
+@app.post("/feedback")
+@limiter.limit("60/minute")
+async def feedback(request: Request, body: FeedbackRequest):
+    """Bir asistan mesajına like (is_positive=true) veya dislike kaydeder."""
+    pool = db.get_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Geri bildirim servisi şu anda kullanılamıyor.")
+
+    ok = await db.save_feedback(
+        pool,
+        message_id=body.message_id,
+        is_positive=body.is_positive,
+        comment=body.comment,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Geri bildirim kaydedilemedi.")
+    return {"status": "ok"}
 
 
 @app.get("/health")
