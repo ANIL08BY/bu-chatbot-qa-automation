@@ -32,7 +32,10 @@ async def init_pool(dsn: str) -> None:
         return
     try:
         import asyncpg
-        _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5, command_timeout=5, ssl="require")
+
+        _pool = await asyncpg.create_pool(
+            dsn, min_size=1, max_size=5, command_timeout=5, ssl="require"
+        )
         logger.info("PostgreSQL bağlantı havuzu başlatıldı.")
     except Exception as exc:
         logger.warning("PostgreSQL bağlanamadı, kayıt devre dışı: %s", exc)
@@ -72,7 +75,7 @@ async def log_interaction(
     sources: list[dict[str, Any]],
     latency_ms: int,
     error_status: str | None,
-) -> None:
+) -> int | None:
     """
     Tek transaction içinde sırasıyla:
       1. sessions  → yeni oturum aç
@@ -81,13 +84,13 @@ async def log_interaction(
       4. citations → her kaynak için bir satır
       5. system_logs → gecikme ve hata durumu
 
-    Herhangi bir hata oluşursa transaction geri alınır ve uyarı loglanır.
+    Başarılı olursa asistan mesajının id'sini döndürür (feedback için kullanılır).
+    Herhangi bir hata oluşursa transaction geri alınır, None döner ve uyarı loglanır.
     Bu fonksiyon HİÇBİR ZAMAN exception fırlatmaz.
     """
     try:
         async with pool.acquire() as conn:
             async with conn.transaction():
-
                 # 1. Oturum
                 session_id: int = await conn.fetchval(
                     """
@@ -105,7 +108,9 @@ async def log_interaction(
                     VALUES ($1, $2, $3)
                     RETURNING id
                     """,
-                    session_id, "user", question,
+                    session_id,
+                    "user",
+                    question,
                 )
 
                 # 3. Asistan mesajı
@@ -115,7 +120,9 @@ async def log_interaction(
                     VALUES ($1, $2, $3)
                     RETURNING id
                     """,
-                    session_id, "assistant", answer,
+                    session_id,
+                    "assistant",
+                    answer,
                 )
 
                 # 4. Kaynaklar (citations)
@@ -129,7 +136,9 @@ async def log_interaction(
                         INSERT INTO belek_chatbot.citations (message_id, doc_name, page_num)
                         VALUES ($1, $2, $3)
                         """,
-                        asst_msg_id, doc_name, page_num,
+                        asst_msg_id,
+                        doc_name,
+                        page_num,
                     )
 
                 # 5. Sistem logu
@@ -138,10 +147,51 @@ async def log_interaction(
                     INSERT INTO belek_chatbot.system_logs (message_id, latency_ms, error_status)
                     VALUES ($1, $2, $3)
                     """,
-                    asst_msg_id, latency_ms, error_status,
+                    asst_msg_id,
+                    latency_ms,
+                    error_status,
                 )
+
+        return asst_msg_id
 
     except Exception as exc:
         # Stack trace ile logla — RLS bypass eksikliği gibi sessiz fail'lerin gerçek
         # kaynağı görünür olsun. Yanıt akışı etkilenmez (logging best-effort'tur).
         logger.exception("DB log_interaction hatası (yanıt etkilenmedi): %s", exc)
+        return None
+
+
+async def save_feedback(
+    pool,
+    *,
+    message_id: int,
+    is_positive: bool,
+    comment: str | None = None,
+) -> bool:
+    """
+    Kullanıcının bir asistan mesajına verdiği geri bildirimi (like/dislike) kaydet.
+
+    feedback tablosunda message_id UNIQUE olduğundan ON CONFLICT ile günceller:
+    kullanıcı fikrini değiştirirse (like → dislike) yeni değer geçerli olur.
+
+    Başarılı olursa True, aksi halde False döner. Exception fırlatmaz.
+    """
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO belek_chatbot.feedback (message_id, is_positive, comment)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (message_id)
+                DO UPDATE SET
+                    is_positive = EXCLUDED.is_positive,
+                    comment     = EXCLUDED.comment
+                """,
+                message_id,
+                is_positive,
+                comment,
+            )
+        return True
+    except Exception as exc:
+        logger.exception("DB save_feedback hatası: %s", exc)
+        return False

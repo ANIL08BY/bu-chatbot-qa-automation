@@ -5,6 +5,7 @@ Endpoint'ler:
   POST /ask    — Soru-cevap (rate-limited)
   GET  /health — Bağımlılık durumu kontrolü
 """
+
 import logging
 import os
 import re
@@ -12,16 +13,8 @@ import time
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
-from dotenv import load_dotenv
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
-
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,6 +25,14 @@ from slowapi.util import get_remote_address
 
 from . import db
 from .query_v2 import ask_question_v2 as ask_question
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 def _build_dsn() -> str:
     """DB_* env var'larından PostgreSQL DSN oluşturur. Herhangi biri eksikse boş döner."""
-    host     = os.getenv("DB_HOST", "")
-    port     = os.getenv("DB_PORT", "5432")
-    name     = os.getenv("DB_NAME", "")
-    user     = os.getenv("DB_USER", "")
+    host = os.getenv("DB_HOST", "")
+    port = os.getenv("DB_PORT", "5432")
+    name = os.getenv("DB_NAME", "")
+    user = os.getenv("DB_USER", "")
     password = os.getenv("DB_PASSWORD", "")
     if not all([host, name, user, password]):
         return ""
@@ -64,6 +65,7 @@ async def lifespan(app: FastAPI):
     await db.init_pool(_build_dsn())
     # Modelleri startup'ta yükle — ilk kullanıcı isteği soğuk başlatmaya kurban gitmesin
     import asyncio
+
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _preload_models)
     yield
@@ -74,6 +76,7 @@ def _preload_models() -> None:
     """Embedding ve reranker modellerini arka planda yükle."""
     try:
         from backend.query_v2 import _init_v2
+
         _init_v2()
         logger.info("Model preload tamamlandı — ilk istek hazır.")
     except Exception as exc:
@@ -129,6 +132,12 @@ class ChatRequest(BaseModel):
     history: list[HistoryMessage] = []
 
 
+class FeedbackRequest(BaseModel):
+    message_id: int = Field(..., gt=0)
+    is_positive: bool
+    comment: str | None = Field(default=None, max_length=2000)
+
+
 # ---------------------------------------------------------------------------
 # Endpoint'ler
 # ---------------------------------------------------------------------------
@@ -140,6 +149,7 @@ async def chat(request: Request, body: ChatRequest):
     start = time.monotonic()
     error_status: str | None = None
     result: dict = {}
+    response_payload: dict | None = None
 
     try:
         question = _sanitize_input(body.question)
@@ -148,31 +158,33 @@ async def chat(request: Request, body: ChatRequest):
 
         history = [{"role": m.role, "content": m.content} for m in body.history]
         result = ask_question(question, history)
-        return {
-            "answer":   result["answer"],
-            "sources":  result["sources"],
+        response_payload = {
+            "answer": result["answer"],
+            "sources": result["sources"],
             "category": result.get("category", "genel"),
-            "engine":   result.get("engine", "v1"),
+            "engine": result.get("engine", "v1"),
+            "message_id": None,  # finally bloğunda DB kaydından sonra doldurulur
         }
+        return response_payload
     except HTTPException:
         raise
     except RuntimeError as e:
         error_status = str(e)[:255]
         logger.error("Servis hatası: %s", e)
-        raise HTTPException(status_code=503, detail=str(e))
-    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except httpx.TimeoutException as e:
         error_status = "TimeoutException"
-        raise HTTPException(status_code=504, detail="Arama servisi zaman aşımına uğradı.")
+        raise HTTPException(status_code=504, detail="Arama servisi zaman aşımına uğradı.") from e
     except Exception as e:
         error_status = str(e)[:255]
         logger.error("Beklenmeyen hata: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Yanıt oluşturulurken bir hata oluştu.")
+        raise HTTPException(status_code=500, detail="Yanıt oluşturulurken bir hata oluştu.") from e
     finally:
         latency_ms = int((time.monotonic() - start) * 1000)
         pool = db.get_pool()
         if pool and result:
             try:
-                await db.log_interaction(
+                asst_msg_id = await db.log_interaction(
                     pool,
                     user_ip=request.client.host if request.client else "unknown",
                     question=body.question,
@@ -181,9 +193,32 @@ async def chat(request: Request, body: ChatRequest):
                     latency_ms=latency_ms,
                     error_status=error_status,
                 )
+                # Yanıt henüz istemciye gönderilmedi (finally return'den önce çalışır):
+                # dict mutasyonu serileştirmeye yansır.
+                if asst_msg_id is not None and response_payload is not None:
+                    response_payload["message_id"] = asst_msg_id
             except Exception as exc:
                 # Stack trace ile — RLS gibi sessiz fail'lerin kaynağı görünür olsun
                 logger.exception("DB log hatası: %s", exc)
+
+
+@app.post("/feedback")
+@limiter.limit("60/minute")
+async def feedback(request: Request, body: FeedbackRequest):
+    """Bir asistan mesajına like (is_positive=true) veya dislike kaydeder."""
+    pool = db.get_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Geri bildirim servisi şu anda kullanılamıyor.")
+
+    ok = await db.save_feedback(
+        pool,
+        message_id=body.message_id,
+        is_positive=body.is_positive,
+        comment=body.comment,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Geri bildirim kaydedilemedi.")
+    return {"status": "ok"}
 
 
 @app.get("/health")
@@ -197,6 +232,7 @@ async def health(request: Request):
     # Qdrant bağlantı kontrolü (local disk veya uzak sunucu)
     try:
         from qdrant_client import QdrantClient
+
         qdrant_path = os.getenv("QDRANT_PATH", "")
         if qdrant_path:
             client = QdrantClient(path=qdrant_path)
