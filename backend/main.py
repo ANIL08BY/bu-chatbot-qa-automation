@@ -5,6 +5,7 @@ Endpoint'ler:
   POST /ask    — Soru-cevap (rate-limited)
   GET  /health — Bağımlılık durumu kontrolü
 """
+
 import logging
 import os
 import re
@@ -12,16 +13,8 @@ import time
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
-from dotenv import load_dotenv
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
-
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,6 +25,14 @@ from slowapi.util import get_remote_address
 
 from . import db
 from .query_v2 import ask_question_v2 as ask_question
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 def _build_dsn() -> str:
     """DB_* env var'larından PostgreSQL DSN oluşturur. Herhangi biri eksikse boş döner."""
-    host     = os.getenv("DB_HOST", "")
-    port     = os.getenv("DB_PORT", "5432")
-    name     = os.getenv("DB_NAME", "")
-    user     = os.getenv("DB_USER", "")
+    host = os.getenv("DB_HOST", "")
+    port = os.getenv("DB_PORT", "5432")
+    name = os.getenv("DB_NAME", "")
+    user = os.getenv("DB_USER", "")
     password = os.getenv("DB_PASSWORD", "")
     if not all([host, name, user, password]):
         return ""
@@ -64,6 +65,7 @@ async def lifespan(app: FastAPI):
     await db.init_pool(_build_dsn())
     # Modelleri startup'ta yükle — ilk kullanıcı isteği soğuk başlatmaya kurban gitmesin
     import asyncio
+
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _preload_models)
     yield
@@ -74,10 +76,12 @@ def _preload_models() -> None:
     """Embedding ve reranker modellerini arka planda yükle."""
     try:
         from backend.query_v2 import _init_v2
+
         _init_v2()
         logger.info("Model preload tamamlandı — ilk istek hazır.")
     except Exception as exc:
-        logger.warning("Model preload başarısız (ilk istek yükleyecek): %s", exc)
+        # Stack trace ile logla — Qdrant/Groq/.env hatalarının gerçek kaynağı görünür olsun
+        logger.exception("Model preload başarısız (ilk istek tekrar deneyecek): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -155,10 +159,10 @@ async def chat(request: Request, body: ChatRequest):
         history = [{"role": m.role, "content": m.content} for m in body.history]
         result = ask_question(question, history)
         response_payload = {
-            "answer":   result["answer"],
-            "sources":  result["sources"],
+            "answer": result["answer"],
+            "sources": result["sources"],
             "category": result.get("category", "genel"),
-            "engine":   result.get("engine", "v1"),
+            "engine": result.get("engine", "v1"),
             "message_id": None,  # finally bloğunda DB kaydından sonra doldurulur
         }
         return response_payload
@@ -167,14 +171,14 @@ async def chat(request: Request, body: ChatRequest):
     except RuntimeError as e:
         error_status = str(e)[:255]
         logger.error("Servis hatası: %s", e)
-        raise HTTPException(status_code=503, detail=str(e))
-    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except httpx.TimeoutException as e:
         error_status = "TimeoutException"
-        raise HTTPException(status_code=504, detail="Arama servisi zaman aşımına uğradı.")
+        raise HTTPException(status_code=504, detail="Arama servisi zaman aşımına uğradı.") from e
     except Exception as e:
         error_status = str(e)[:255]
         logger.error("Beklenmeyen hata: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Yanıt oluşturulurken bir hata oluştu.")
+        raise HTTPException(status_code=500, detail="Yanıt oluşturulurken bir hata oluştu.") from e
     finally:
         latency_ms = int((time.monotonic() - start) * 1000)
         pool = db.get_pool()
@@ -194,7 +198,8 @@ async def chat(request: Request, body: ChatRequest):
                 if asst_msg_id is not None and response_payload is not None:
                     response_payload["message_id"] = asst_msg_id
             except Exception as exc:
-                logger.warning("DB log hatası: %s", exc)
+                # Stack trace ile — RLS gibi sessiz fail'lerin kaynağı görünür olsun
+                logger.exception("DB log hatası: %s", exc)
 
 
 @app.post("/feedback")
@@ -227,6 +232,7 @@ async def health(request: Request):
     # Qdrant bağlantı kontrolü (local disk veya uzak sunucu)
     try:
         from qdrant_client import QdrantClient
+
         qdrant_path = os.getenv("QDRANT_PATH", "")
         if qdrant_path:
             client = QdrantClient(path=qdrant_path)
@@ -239,16 +245,15 @@ async def health(request: Request):
     except Exception:
         checks["qdrant"] = "unavailable"
 
-    # ChromaDB varlık kontrolü (V1 fallback)
-    vector_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vector_db")
-    checks["chromadb"] = "ok" if os.path.isdir(vector_db_path) else "missing"
-
-    # PostgreSQL bağlantı kontrolü
+    # PostgreSQL bağlantı kontrolü (opsiyonel — kayıt için kullanılır)
     pool = db.get_pool()
     if pool:
         checks["postgres"] = await db.check_health(pool)
     else:
-        checks["postgres"] = "unavailable"
+        checks["postgres"] = "disabled"
 
-    all_ok = all(v == "ok" for v in checks.values())
+    # 503 yalnızca kritik bileşenler (api, groq_key, qdrant) için
+    # PostgreSQL opsiyonel: "disabled" veya "unavailable" durumu API'yi servis dışı bırakmaz
+    critical = ("api", "groq_key", "qdrant")
+    all_ok = all(checks.get(k) == "ok" for k in critical)
     return JSONResponse(checks, status_code=200 if all_ok else 503)

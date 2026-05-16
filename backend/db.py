@@ -32,7 +32,10 @@ async def init_pool(dsn: str) -> None:
         return
     try:
         import asyncpg
-        _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5, command_timeout=5, ssl="require")
+
+        _pool = await asyncpg.create_pool(
+            dsn, min_size=1, max_size=5, command_timeout=5, ssl="require"
+        )
         logger.info("PostgreSQL bağlantı havuzu başlatıldı.")
     except Exception as exc:
         logger.warning("PostgreSQL bağlanamadı, kayıt devre dışı: %s", exc)
@@ -88,7 +91,6 @@ async def log_interaction(
     try:
         async with pool.acquire() as conn:
             async with conn.transaction():
-
                 # 1. Oturum
                 session_id: int = await conn.fetchval(
                     """
@@ -106,7 +108,9 @@ async def log_interaction(
                     VALUES ($1, $2, $3)
                     RETURNING id
                     """,
-                    session_id, "user", question,
+                    session_id,
+                    "user",
+                    question,
                 )
 
                 # 3. Asistan mesajı
@@ -116,7 +120,9 @@ async def log_interaction(
                     VALUES ($1, $2, $3)
                     RETURNING id
                     """,
-                    session_id, "assistant", answer,
+                    session_id,
+                    "assistant",
+                    answer,
                 )
 
                 # 4. Kaynaklar (citations)
@@ -130,7 +136,9 @@ async def log_interaction(
                         INSERT INTO belek_chatbot.citations (message_id, doc_name, page_num)
                         VALUES ($1, $2, $3)
                         """,
-                        asst_msg_id, doc_name, page_num,
+                        asst_msg_id,
+                        doc_name,
+                        page_num,
                     )
 
                 # 5. Sistem logu
@@ -139,7 +147,9 @@ async def log_interaction(
                     INSERT INTO belek_chatbot.system_logs (message_id, latency_ms, error_status)
                     VALUES ($1, $2, $3)
                     """,
-                    asst_msg_id, latency_ms, error_status,
+                    asst_msg_id,
+                    latency_ms,
+                    error_status,
                 )
 
         return asst_msg_id
@@ -177,7 +187,9 @@ async def save_feedback(
                     is_positive = EXCLUDED.is_positive,
                     comment     = EXCLUDED.comment
                 """,
-                message_id, is_positive, comment,
+                message_id,
+                is_positive,
+                comment,
             )
         return True
     except Exception as exc:

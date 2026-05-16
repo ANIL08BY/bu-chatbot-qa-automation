@@ -174,7 +174,6 @@ export default function App() {
               isDarkMode={isDarkMode}
               isError={message.isError}
               onRetry={message.isError ? handleRetry : undefined}
-              messageDbId={message.messageDbId}
               feedback={message.feedback ?? null}
               onFeedback={
                 !message.isUser && !message.isError && !message.isGreeting

@@ -17,7 +17,6 @@ interface ChatMessageProps {
   isDarkMode?: boolean;
   onRetry?: () => void;
   isError?: boolean;
-  messageDbId?: number;
   feedback?: FeedbackValue;
   onFeedback?: (value: 'like' | 'dislike') => void;
 }
@@ -29,7 +28,6 @@ export function ChatMessage({
   isDarkMode = false,
   onRetry,
   isError = false,
-  messageDbId: _messageDbId,
   feedback = null,
   onFeedback,
 }: ChatMessageProps) {

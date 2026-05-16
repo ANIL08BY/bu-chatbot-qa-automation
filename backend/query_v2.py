@@ -1,13 +1,11 @@
 """
-Soru-Cevap Motoru V2 — Qdrant Hybrid Search + Cross-Encoder Reranking.
+Soru-Cevap Motoru — Qdrant Hybrid Search + Cross-Encoder Reranking.
 
-query.py (V1) → ChromaDB MMR + BM25 pickle + RRF (manuel)
-query_v2.py   → Qdrant built-in hybrid (dense + BM42) + bge-reranker-v2-m3
-
-Fallback:
-  Qdrant erişilemezse otomatik olarak V1 pipeline'a geçer.
+Pipeline: Qdrant built-in hybrid (dense + BM42 sparse) + bge-reranker-base
+LLM:      Groq llama-3.3-70b → llama-4-scout → llama-3.1-8b-instant fallback
 
 Lazy initialization: Tüm modeller ilk istekte yüklenir.
+Qdrant veya LLM erişilemezse RuntimeError fırlatır → main.py 503 olarak döner.
 """
 from __future__ import annotations
 
@@ -57,29 +55,31 @@ _embedding_model  = None
 _reranker         = None
 _qdrant_client    = None
 _llm_chain        = None
-_v2_available     = None   # None = henüz test edilmedi
-_init_v2_lock     = threading.Lock()
+_initialized      = False
+_init_lock        = threading.Lock()
 
 
-def _init_v2() -> bool:
+def _init_v2() -> None:
     """
-    V2 bileşenlerini yükle.
-    Returns True başarılı, False Qdrant erişilemezse.
+    Qdrant + embedding + reranker + LLM zincirini hazırla.
+
+    Hata durumunda RuntimeError fırlatır — fallback yoktur, hata
+    main.py tarafından 503 olarak döndürülür.
     """
-    global _embedding_model, _reranker, _qdrant_client, _llm_chain, _v2_available
+    global _embedding_model, _reranker, _qdrant_client, _llm_chain, _initialized
 
-    if _v2_available is not None:
-        return _v2_available
+    if _initialized:
+        return
 
-    with _init_v2_lock:
-        if _v2_available is not None:
-            return _v2_available
+    with _init_lock:
+        if _initialized:
+            return
 
         try:
             # Embedding modeli
             if _embedding_model is None:
                 from sentence_transformers import SentenceTransformer
-                logger.info("V2 embedding modeli yükleniyor: %s", _EMBEDDING_MODEL)
+                logger.info("Embedding modeli yükleniyor: %s", _EMBEDDING_MODEL)
                 _embedding_model = SentenceTransformer(_EMBEDDING_MODEL)
 
             # Reranker
@@ -99,21 +99,21 @@ def _init_v2() -> bool:
                     logger.info("Qdrant bağlantısı OK: %s:%d/%s", _QDRANT_HOST, _QDRANT_PORT, _COLLECTION)
                 _qdrant_client.get_collection(_COLLECTION)
 
-            # LLM chain — V2'ye özgü, V1'e bağımlılık yok
+            # LLM chain
             if _llm_chain is None:
                 from backend.rag_common import build_chain
                 _llm_chain = build_chain()
 
-            _v2_available = True
-            logger.info("Query V2 hazır.")
+            _initialized = True
+            logger.info("Query motoru hazır.")
 
         except Exception as exc:
-            logger.warning(
-                "Query V2 başlatılamadı (%s) — V1 fallback aktif.", exc
-            )
-            _v2_available = False
-
-        return _v2_available
+            # Stack trace ile loglayalım — hatanın gerçek kaynağı görünür olsun
+            logger.exception("Query motoru başlatılamadı: %s", exc)
+            raise RuntimeError(
+                f"Servis başlatılamadı: {exc}. "
+                "Qdrant/Groq erişimini ve .env değişkenlerini kontrol edin."
+            ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ def _rerank(
     docs: list[dict],
     top_k: int,
 ) -> list[dict]:
-    """BAAI/bge-reranker-v2-m3 ile çapraz kodlayıcı yeniden sıralama."""
+    """BAAI/bge-reranker-base ile çapraz kodlayıcı yeniden sıralama."""
     if not docs:
         return []
 
@@ -194,7 +194,7 @@ def _rerank(
     try:
         scores = _reranker.predict(pairs, show_progress_bar=False)
     except Exception as exc:
-        logger.warning("Reranker hatası: %s — sıralama korunuyor.", exc)
+        logger.exception("Reranker hatası — sıralama korunuyor: %s", exc)
         return docs[:top_k]
 
     ranked = sorted(
@@ -213,10 +213,11 @@ def ask_question_v2(
 ) -> dict:
     """
     V2 pipeline ile soru yanıtla.
-    Qdrant erişilemezse → V1 ask_question()'a fallback.
+
+    Qdrant veya LLM hatası → RuntimeError (main.py 503 olarak döner).
 
     Returns:
-        {"answer": str, "sources": list[dict], "category": str, "engine": "v2"|"v1"}
+        {"answer": str, "sources": list[dict], "category": str, "engine": "v2"}
     """
     import time
 
@@ -225,13 +226,8 @@ def ask_question_v2(
 
     # ── Init ──────────────────────────────────────────────────────────────
     _t = time.perf_counter()
-    v2_ok = _init_v2()
+    _init_v2()  # hata durumunda RuntimeError fırlatır
     timings["init"] = time.perf_counter() - _t
-
-    if not v2_ok:
-        from backend.query import ask_question as ask_v1
-        result = ask_v1(query, history)
-        return {**result, "engine": "v1"}
 
     # ── Sorgu analizi (Groq) ───────────────────────────────────────────────
     _t = time.perf_counter()
@@ -247,10 +243,8 @@ def ask_question_v2(
             search_query, category=detected, k=k
         )
     except Exception as exc:
-        logger.error("Qdrant arama hatası: %s — V1 fallback.", exc)
-        from backend.query import ask_question as ask_v1
-        result = ask_v1(query, history)
-        return {**result, "engine": "v1"}
+        logger.exception("Qdrant arama hatası: %s", exc)
+        raise RuntimeError(f"Qdrant arama hatası: {exc}") from exc
     timings["embed_and_search"] = time.perf_counter() - _t
 
     # ── Reranking ─────────────────────────────────────────────────────────
@@ -296,6 +290,7 @@ def ask_question_v2(
         response = _llm_chain.invoke(payload)
     except Exception as exc:
         if not is_rate_limit(exc):
+            logger.exception("LLM çağrısı başarısız: %s", exc)
             raise
         response = invoke_fallback(payload)
     timings["llm"] = time.perf_counter() - _t
