@@ -13,13 +13,14 @@ Kullanım:
 
 Gereksinim: Qdrant çalışıyor ve belek_v2 collection dolu olmalı.
 """
+
 from __future__ import annotations
 
 import json
-import os
-import sys
 import logging
-from typing import Any, Callable
+import os
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ SAMPLE_QUERIES: list[dict[str, str]] = [
 # ---------------------------------------------------------------------------
 # Metrikler
 # ---------------------------------------------------------------------------
+
 
 def compute_hit_rate(
     retriever_fn: Callable[[str, str, int], list[dict]],
@@ -174,6 +176,7 @@ def compute_keyword_coverage(
 # Qdrant retriever yardımcısı
 # ---------------------------------------------------------------------------
 
+
 def _build_qdrant_retriever(
     host: str = "localhost",
     port: int = 6333,
@@ -185,7 +188,7 @@ def _build_qdrant_retriever(
     Eval modülü içinde standalone çalışabilir.
     """
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest
+    from qdrant_client.models import FieldCondition, Filter, MatchValue
     from sentence_transformers import SentenceTransformer
 
     client = QdrantClient(host=host, port=port)
@@ -196,7 +199,7 @@ def _build_qdrant_retriever(
         filter_condition = None
         if category and category != "genel":
             filter_condition = Filter(
-                must=[FieldCondition("doc_category", MatchValue(value=category))]
+                must=[FieldCondition(key="doc_category", match=MatchValue(value=category))]
             )
         results = client.search(
             collection_name=collection,
@@ -213,6 +216,7 @@ def _build_qdrant_retriever(
 # ---------------------------------------------------------------------------
 # Ana değerlendirme
 # ---------------------------------------------------------------------------
+
 
 def run_evaluation(retriever_fn=None) -> dict[str, Any]:
     """
@@ -241,21 +245,23 @@ def run_evaluation(retriever_fn=None) -> dict[str, Any]:
         try:
             results = retriever_fn(item["query"], item["expected_category"], 5)
             top_cats = [r.get("doc_category", "?") for r in results[:3]]
-            per_query.append({
-                "query": item["query"],
-                "expected": item["expected_category"],
-                "top3_categories": top_cats,
-                "hit": item["expected_category"] in [r.get("doc_category") for r in results],
-            })
+            per_query.append(
+                {
+                    "query": item["query"],
+                    "expected": item["expected_category"],
+                    "top3_categories": top_cats,
+                    "hit": item["expected_category"] in [r.get("doc_category") for r in results],
+                }
+            )
         except Exception as exc:
             per_query.append({"query": item["query"], "error": str(exc)})
 
     report = {
-        "hit_rate@5":        round(hit_rate, 4),
-        "mrr":               round(mrr, 4),
-        "keyword_coverage":  round(kw_cov, 4),
-        "total_queries":     len(SAMPLE_QUERIES),
-        "per_query":         per_query,
+        "hit_rate@5": round(hit_rate, 4),
+        "mrr": round(mrr, 4),
+        "keyword_coverage": round(kw_cov, 4),
+        "total_queries": len(SAMPLE_QUERIES),
+        "per_query": per_query,
     }
     return report
 
