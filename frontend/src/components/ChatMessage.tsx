@@ -130,9 +130,7 @@ function FeedbackButton({ kind, active, isDarkMode, onClick }: FeedbackButtonPro
   const Icon = kind === 'like' ? ThumbsUp : ThumbsDown;
   const label = kind === 'like' ? 'Yanıtı beğen' : 'Yanıtı beğenme';
 
-  // Aktif: yalnızca ikon beyaz dolgu — halka/arka plan yok.
-  // Pasif: temaya uyumlu yumuşak gri tonlar.
-  const activeColor = 'text-white';
+  const activeColor = isDarkMode ? 'text-white' : 'text-[#374151]';
   const idleColor = isDarkMode
     ? 'text-gray-400 hover:text-gray-100'
     : 'text-gray-500 hover:text-[#111111]';

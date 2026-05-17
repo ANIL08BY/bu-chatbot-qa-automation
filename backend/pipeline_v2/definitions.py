@@ -10,6 +10,7 @@ workspace.yaml bu modülü yükler:
 Başlatma:
   dagster dev -w workspace.yaml
 """
+
 import os
 
 from dagster import Definitions
@@ -36,6 +37,8 @@ _resources = {
         timeout=60.0,
     ),
     "qdrant": QdrantResource(
+        url=os.environ.get("QDRANT_URL", ""),
+        api_key=os.environ.get("QDRANT_API_KEY", ""),
         host=os.environ.get("QDRANT_HOST", BELEK_CONFIG_V2.qdrant_host),
         port=int(os.environ.get("QDRANT_PORT", str(BELEK_CONFIG_V2.qdrant_port))),
         path=os.environ.get("QDRANT_PATH", ""),

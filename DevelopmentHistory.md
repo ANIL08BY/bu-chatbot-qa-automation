@@ -54,6 +54,91 @@ Her Claude Code session'ı sonunda aşağıdaki bloğu kopyalayıp dosyanın **e
 
 ---
 
+## 2026-05-16 — System Prompt Asistif Fallback Revizyonu (UX iyileştirme)
+
+**Session bağlamı:** Kullanıcı, chatbot'un dokümantasyonda olmayan veya öznel sorulara verdiği "Bu konu hakkında elimde yeterli bilgi bulunmuyor." şeklindeki tek satırlık ret cevabının kullanıcı deneyimini olumsuz etkilediğini belirtti. Bunun yerine asistif, alternatif öneren ve soruya soruyla cevap veren (dialog'u sürdüren) bir davranış istedi.
+**Hedef:** Faktüel doğruluk (Kural 1 — uydurma yasağı) ve off-topic disiplin (Kural 7) korunarak; dokümanda olmayan / öznel / yorum gerektiren sorularda LLM'in (a) neden doğrudan cevaplayamadığını açıklaması, (b) DÖKÜMAN'da bulunan yakın somut konuları önermesi, (c) takip sorusuyla diyaloğu sürdürmesi.
+
+### Yapılan Değişiklikler
+- `backend/prompts/system_prompt.txt` — Kural 6 baştan yazıldı:
+  - Eski: Tek satırlık ret cümlesi.
+  - Yeni: 4 alt-maddeli asistif pattern (öznel ↔ olgusal ayrımı, somut alternatif önerisi, takip sorusu, hiçbir yakın konu yoksa generic kategori menüsü).
+  - Inline few-shot örneği eklendi: *"Kampüs güzel mi?" → "Öğrencilerin kişisel görüşlerini aktaramam... ancak konum/olanak/ulaşım bilgisi verebilirim. Bunlardan birini öğrenmek ister misin?"*
+- `backend/prompts/system_prompt.txt` — Kural 1 güçlendirildi: "Uydurma yasağı, Kural 6 kapsamında alternatif önerirken de geçerlidir; yalnızca DÖKÜMAN'da gerçekten geçen başlıkları öner."
+- `backend/prompts/system_prompt.txt` — Kural 7 önceliği netleştirildi: "Bu kural Kural 6'dan önceliklidir — alakasız konularda asistif pivot YAPMA."
+- `CLAUDE.md` Section 11 — Yeni Kural 6 davranışı dokümante edildi; 1, 7 önceliği güncellendi.
+
+### Yeni Dosyalar
+Yok.
+
+### Silinen Dosyalar
+Yok.
+
+### Mimari / Davranış Etkisi
+**Davranış değişikliği (LLM yanıt biçemi).** Mimari, endpoint sözleşmesi ve retrieval pipeline değişmedi. PROMPT_TEMPLATE hem `build_chain()` hem `invoke_fallback()` tarafından okunur — değişiklik tüm fallback chain'inde aktif.
+
+Faktüel doğruluk garantileri korundu: Kural 1 hâlâ "asla uydurma" diyor, sadece "ret biçemi" değişti.
+
+### Test Durumu
+- `pytest tests/ -v`: çalıştırılmadı (yalnız prompt değişikliği — Python kodu değişmedi).
+- `tests/test_rag_common.py` placeholder doğrulamaları (`{context}`, `{question}`, `{history}`, `{category_context}`, `DÖKÜMAN`, `KURALLAR`): grep ile doğrulandı, hepsi yeni prompt'ta mevcut → testler geçer.
+- `pytest -m slow tests/test_eval_integration.py`: Çalıştırılmadı. **Öneri:** Bu prompt RAG metrik testlerini etkileyebilir (Hit Rate ≥0.5, MRR ≥0.3) — Qdrant retrieval'a göre değil LLM cevabına göre olan değerlendirmeler etkilenebilir, ancak eval testleri retrieval-only (kategori match) olduğu için prompt'tan bağımsızdır. Yine de baseline almak için bir sonraki session'da çalıştırılması önerilir.
+- Manuel test: Yapılmadı — kullanıcıya backend'i restart edip "Kampüs güzel mi?" / "Yemekhane lezzetli mi?" / "Hocalar iyi mi?" gibi öznel sorular ve "Kütüphane Cuma günü kaçta kapanıyor?" gibi spesifik-ama-belki-yok soruları deneme önerildi.
+
+### CLAUDE.md Güncellemesi
+- [x] Section 11 (system prompt 12 kuralının özeti — Kural 1, 6, 7 güncellendi)
+- [x] Güncelleme gerekti
+
+### Kullanıcıya Notlar
+1. **Backend restart gerekli** — `PROMPT_TEMPLATE` modül import zamanında okunuyor (`rag_common.py:27`). Uvicorn `--reload` mode ise prompt dosyası kaydedildiğinde otomatik reload tetikler.
+2. **Test edilecek senaryolar:**
+   - Öznel soru → asistif pivot: "Kampüs güzel mi?", "Yemekhane lezzetli mi?", "Hocalar iyi mi?"
+   - Olgusal-ama-dokümanda-olmayan: "Kütüphane Cuma günü kaçta kapanıyor?"
+   - Off-topic (pivot OLMAMALI): "Hava nasıl?", "Bana fıkra anlat"
+   - Dokümanda olan (normal cevap): "Final sınavları ne zaman?", "Yatay geçiş şartları"
+3. **Potansiyel ayarlama:** Eğer LLM bazen aşırı asistif ("Sana 50 farklı konu önerebilirim") veya aşırı tekrarcı oluyorsa, Kural 6/b'ye "**en fazla 3 yakın konu öner**" kısıtı eklenebilir.
+4. **Eval baseline:** `pytest -m slow` mümkünse bu commit sonrası çalıştırılıp baseline kaydedilmeli — retrieval testleri prompt'tan bağımsız olsa da, LLM yanıt kalitesini ileride manuel kıyaslamak için bu sürüm referans noktası olur.
+
+### Commitlenmemiş Değişiklikler / TODO
+**Bu session'da değiştirilenler (henüz commit edilmedi):**
+- `backend/prompts/system_prompt.txt`
+- `CLAUDE.md`
+- `DevelopmentHistory.md` (bu giriş)
+
+**Sonraki adım:** development + test branch'lerine commit (kullanıcı onayı sonrası).
+
+---
+
+## 2026-05-16 — eval.py Pydantic V2 Positional Argument Fix (BUG-001)
+
+**Session bağlamı:** Test arkadaşının raporu: `backend/pipeline_v2/evaluation/eval.py` 114/141/167. satırlarda Pydantic Positional Argument hatası → Hit Rate / MRR / Coverage metrik testleri çöküyor.
+**Hedef:** Hatanın gerçek kaynağını bul ve düzelt.
+
+### Yapılan Değişiklikler
+- `backend/pipeline_v2/evaluation/eval.py:202` — `FieldCondition("doc_category", MatchValue(...))` → `FieldCondition(key="doc_category", match=MatchValue(...))`.
+  - Pydantic V2 model constructor'ları positional argument kabul etmiyor; qdrant-client güncel sürümünde `FieldCondition` Pydantic V2 modeli.
+  - Hata `retriever()` içinden fırlatılıp `compute_hit_rate/mrr/coverage`'ın `except` bloklarına düşüyordu — bu yüzden hata satırı yanlış konumda görünüyordu.
+- Ruff auto-format: `from typing import Callable` → `from collections.abc import Callable`, import sıralama, ek satır boşlukları.
+
+### Yeni / Silinen Dosyalar
+Yok.
+
+### Mimari / Davranış Etkisi
+İç refaktör — RAG pipeline davranışı aynı. Sadece eval scripti tekrar çalışır durumda.
+
+### Test Durumu
+- `pytest -m slow`: Bu commit sonrası kullanıcı tarafında çalıştırılacak (test arkadaşı doğrulayacak).
+- Pre-commit (ruff + ruff-format): geçti.
+
+### CLAUDE.md Güncellemesi
+- [x] Güncelleme gerekmedi (eval modülü iç detay; mimari/sözleşme değişmedi).
+
+### Kullanıcıya Notlar
+- Commit hash: `be1cd98` (development), test branch'ine merge edildi.
+- BUG-001 artık kapalı; test arkadaşının metrik suite'i yeşil olmalı.
+
+---
+
 ## 2026-05-16 — Kapsamlı Proje Dokümantasyonu Oluşturuldu (CLAUDE.md + DevelopmentHistory.md)
 
 **Session bağlamı:** Kullanıcı, proje final sürümüne yaklaşırken Claude Code'un her session'da projeyi sıfırdan keşfetmek zorunda kalmaması için kapsamlı bir kalıcı bellek altyapısı istedi. Token tasarrufu ve tutarlılık öncelik.

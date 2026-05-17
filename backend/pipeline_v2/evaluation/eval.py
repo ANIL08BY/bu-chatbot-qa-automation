@@ -178,6 +178,8 @@ def compute_keyword_coverage(
 
 
 def _build_qdrant_retriever(
+    url: str = "",
+    api_key: str = "",
     host: str = "localhost",
     port: int = 6333,
     collection: str = "belek_v2",
@@ -186,12 +188,17 @@ def _build_qdrant_retriever(
     """
     Qdrant hybrid arama fonksiyonu döndürür.
     Eval modülü içinde standalone çalışabilir.
+
+    Bağlantı modu (öncelik): url (cloud) > host:port (local)
     """
     from qdrant_client import QdrantClient
     from qdrant_client.models import FieldCondition, Filter, MatchValue
     from sentence_transformers import SentenceTransformer
 
-    client = QdrantClient(host=host, port=port)
+    if url:
+        client = QdrantClient(url=url, api_key=api_key or None)
+    else:
+        client = QdrantClient(host=host, port=port)
     model = SentenceTransformer(embedding_model)
 
     def retriever(query: str, category: str, k: int) -> list[dict]:
@@ -229,9 +236,13 @@ def run_evaluation(retriever_fn=None) -> dict[str, Any]:
         {"hit_rate@5": float, "mrr": float, "keyword_coverage": float, "per_query": list}
     """
     if retriever_fn is None:
-        host = os.environ.get("QDRANT_HOST", "localhost")
-        port = int(os.environ.get("QDRANT_PORT", "6333"))
-        retriever_fn = _build_qdrant_retriever(host=host, port=port)
+        qdrant_url = os.environ.get("QDRANT_URL", "")
+        retriever_fn = _build_qdrant_retriever(
+            url=qdrant_url,
+            api_key=os.environ.get("QDRANT_API_KEY", ""),
+            host=os.environ.get("QDRANT_HOST", "localhost"),
+            port=int(os.environ.get("QDRANT_PORT", "6333")),
+        )
 
     logger.info("Değerlendirme başlıyor (%d sorgu)...", len(SAMPLE_QUERIES))
 
