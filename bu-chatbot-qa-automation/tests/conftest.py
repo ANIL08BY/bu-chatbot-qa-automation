@@ -185,10 +185,8 @@ async def db_pool():
     """
     from backend import db  # Yusuf'un veritabanı modülü
     
-    # .env dosyasındaki DB_DSN'i al (Yusuf'un sisteminde nasıl tanımlıysa)
-    # Eğer .env kullanmıyorsanız, geçici olarak buraya postgres:// URL'sini hardcode edebilirsiniz:
-    # dsn = "postgresql://kullanici_adi:sifre@localhost:5432/veritabani_adi"
-    dsn = os.getenv("DB_DSN", "postgresql://postgres:postgres@localhost:5432/postgres")
+    # Şifreyi koda yazmak yerine doğrudan .env dosyasındaki TEST_DATABASE_URL'i çekiyoruz!
+    dsn = os.getenv("TEST_DATABASE_URL")
     
     # 1. SETUP (Hazırlık): Yusuf'un init_pool fonksiyonunu çalıştır
     await db.init_pool(dsn)
