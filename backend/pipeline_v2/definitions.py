@@ -14,6 +14,7 @@ Başlatma:
 import os
 
 from dagster import Definitions
+from dotenv import load_dotenv
 
 from .assets import (
     approved_preview_index,
@@ -29,6 +30,10 @@ from .assets import (
 from .config_v2 import BELEK_CONFIG_V2
 from .jobs import full_pipeline_job, incremental_job
 from .resources import EmbeddingResource, FirecrawlResource, QdrantResource
+
+# .env dosyasını tüm import'lardan sonra, _resources bloğundan önce yükle.
+# os.environ.get() çağrıları _resources tanımında gerçekleşir; burada yüklenmesi yeterli.
+load_dotenv()
 
 _resources = {
     "firecrawl": FirecrawlResource(
