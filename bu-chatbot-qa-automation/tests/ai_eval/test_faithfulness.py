@@ -1,8 +1,13 @@
+import sys
+import os
+
+# Python'un klasör arama yoluna (sys.path) "tests" klasörünü ZORLA ekle:
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pytest
 from utils.payload_builder import build_chat_payload
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
-import os
 
 pytestmark = pytest.mark.asyncio
 
