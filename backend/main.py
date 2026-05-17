@@ -229,12 +229,16 @@ async def health(request: Request):
     # Groq API key kontrolü
     checks["groq_key"] = "ok" if os.getenv("GROQ_API_KEY") else "missing"
 
-    # Qdrant bağlantı kontrolü (local disk veya uzak sunucu)
+    # Qdrant bağlantı kontrolü (Cloud URL > Local disk > Host:port)
     try:
         from qdrant_client import QdrantClient
 
+        qdrant_url = os.getenv("QDRANT_URL", "")
         qdrant_path = os.getenv("QDRANT_PATH", "")
-        if qdrant_path:
+        if qdrant_url:
+            api_key = os.getenv("QDRANT_API_KEY", "") or None
+            client = QdrantClient(url=qdrant_url, api_key=api_key)
+        elif qdrant_path:
             client = QdrantClient(path=qdrant_path)
         else:
             host = os.getenv("QDRANT_HOST", "localhost")

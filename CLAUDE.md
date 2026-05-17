@@ -492,8 +492,10 @@ proxy: { '/api': { target: 'http://127.0.0.1:8000', rewrite: p => p.replace(/^\/
 |---|:---:|---|---|
 | `GROQ_API_KEY` | ✅ | — | Groq Cloud API anahtarı |
 | `FIRECRAWL_API_KEY` | Pipeline | — | Web ingestion için |
-| `QDRANT_PATH` | — | `./qdrant_local` | Local disk modu (öncelikli) |
-| `QDRANT_HOST` / `QDRANT_PORT` | — | `localhost` / `6333` | Uzak Qdrant |
+| `QDRANT_URL` | — | — | Cloud URL (öncelik 1): `https://xxx.qdrant.io` |
+| `QDRANT_API_KEY` | — | — | Cloud API key (`QDRANT_URL` ile birlikte) |
+| `QDRANT_PATH` | — | `./qdrant_local` | Local disk modu (öncelik 2) |
+| `QDRANT_HOST` / `QDRANT_PORT` | — | `localhost` / `6333` | Host:port modu (öncelik 3) |
 | `CORS_ORIGINS` | — | `http://localhost:5173,http://127.0.0.1:5173` | CSV |
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | — | — | Herhangi biri boşsa logging kapalı |
 
@@ -504,13 +506,13 @@ proxy: { '/api': { target: 'http://127.0.0.1:8000', rewrite: p => p.replace(/^\/
 12 kurallı, Türkçe RAG prompt'u. Template değişkenleri: `{context}`, `{question}`, `{history}`, `{category_context}`.
 
 **Önemli kurallar (özet):**
-1. Sadece DÖKÜMAN içeriği — uydurma yok
+1. Sadece DÖKÜMAN içeriği — uydurma yok (alternatif konu önerirken de geçerli)
 2. Madde alıntısı tam (kırpma yok)
 3. Sayım sorgularında tüm öğeleri say
 4. Kesin tarihler ("yaklaşık" yasak)
 5. Liste sorularında "vb./..." yasak — tam liste
-6. Dökümanda yoksa: *"Bu konu hakkında elimde yeterli bilgi bulunmuyor."*
-7. Üniversite dışı konu: *"Yalnızca Belek Üniversitesi'yle alakalı soruları yanıtlayabilirim."*
+6. **Asistif fallback paterni** (2026-05-16 revizyonu): Dökümanda yoksa tek satırlık ret YOK. Bunun yerine: (a) neden doğrudan cevap veremediğini açıkla (öznel ↔ olgusal ayrımı yap), (b) DÖKÜMAN'da bulunan **yakın somut konuları öner**, (c) takip sorusuyla bitir. Tamamen alakasız retrieval ise generic kategori menüsü + soru. Prompt'ta inline few-shot örneği gömülü ("Kampüs güzel mi?").
+7. Üniversite dışı konu: *"Yalnızca Belek Üniversitesi'yle alakalı soruları yanıtlayabilirim."* — Kural 6'dan önceliklidir; off-topic'te asistif pivot YOK.
 8. Türkçe yanıt, teknik terimler korunur
 9. Çok konulu yanıtlar paragraf/madde bazlı
 10. OBS sorguları: sadece link

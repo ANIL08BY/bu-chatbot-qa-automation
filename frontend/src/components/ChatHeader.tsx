@@ -27,7 +27,7 @@ export function ChatHeader({ title = 'BU Chatbot', onNewChat, onSettingsClick, i
       {/* Center: Slogan — absolute olarak header'ın tam ortasında */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <p className="hidden sm:block text-base sm:text-lg font-medium text-white/90 tracking-widest">
-          Sanal Asistan BUrada.
+          Sanal Asistan <span className="font-bold">BU</span>rada.
         </p>
       </div>
 

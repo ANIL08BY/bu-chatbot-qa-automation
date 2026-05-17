@@ -7,6 +7,7 @@ LLM:      Groq llama-3.3-70b → llama-4-scout → llama-3.1-8b-instant fallback
 Lazy initialization: Tüm modeller ilk istekte yüklenir.
 Qdrant veya LLM erişilemezse RuntimeError fırlatır → main.py 503 olarak döner.
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,6 @@ from backend.pipeline_v2.config_v2 import KNOWN_CATEGORIES_V2
 from backend.rag_common import (
     CATEGORY_LABELS,
     LIST_RE,
-    PROMPT_TEMPLATE,
     analyze_query,
     compute_k,
     format_history,
@@ -37,26 +37,27 @@ logger = logging.getLogger(__name__)
 # Sabitler
 # ---------------------------------------------------------------------------
 
-_QDRANT_PATH       = os.getenv("QDRANT_PATH", "")   # Dolu → local disk modu
-_QDRANT_HOST       = os.getenv("QDRANT_HOST", "localhost")
-_QDRANT_PORT       = int(os.getenv("QDRANT_PORT", "6333"))
-_COLLECTION        = "belek_v2"
-_EMBEDDING_MODEL   = (
-    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-)
-_RERANKER_MODEL    = "BAAI/bge-reranker-base"
+# Qdrant bağlantı modu (öncelik: Cloud URL > Local Disk > Host:Port)
+_QDRANT_URL = os.getenv("QDRANT_URL", "")  # Cloud: https://xxx.qdrant.io
+_QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")  # Cloud API key
+_QDRANT_PATH = os.getenv("QDRANT_PATH", "")  # Dolu → local disk modu
+_QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+_QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+_COLLECTION = "belek_v2"
+_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+_RERANKER_MODEL = "BAAI/bge-reranker-base"
 _DENSE_VECTOR_NAME = "dense"
 
 # ---------------------------------------------------------------------------
 # Lazy-loaded state
 # ---------------------------------------------------------------------------
 
-_embedding_model  = None
-_reranker         = None
-_qdrant_client    = None
-_llm_chain        = None
-_initialized      = False
-_init_lock        = threading.Lock()
+_embedding_model = None
+_reranker = None
+_qdrant_client = None
+_llm_chain = None
+_initialized = False
+_init_lock = threading.Lock()
 
 
 def _init_v2() -> None:
@@ -79,29 +80,38 @@ def _init_v2() -> None:
             # Embedding modeli
             if _embedding_model is None:
                 from sentence_transformers import SentenceTransformer
+
                 logger.info("Embedding modeli yükleniyor: %s", _EMBEDDING_MODEL)
                 _embedding_model = SentenceTransformer(_EMBEDDING_MODEL)
 
             # Reranker
             if _reranker is None:
                 from sentence_transformers import CrossEncoder
+
                 logger.info("Reranker yükleniyor: %s", _RERANKER_MODEL)
                 _reranker = CrossEncoder(_RERANKER_MODEL, max_length=_cfg.reranker_max_length)
 
-            # Qdrant bağlantısı — QDRANT_PATH varsa local disk, yoksa host:port
+            # Qdrant bağlantısı — Cloud URL > Local disk > Host:port
             if _qdrant_client is None:
                 from qdrant_client import QdrantClient
-                if _QDRANT_PATH:
+
+                if _QDRANT_URL:
+                    _qdrant_client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY or None)
+                    logger.info("Qdrant Cloud modu: %s/%s", _QDRANT_URL, _COLLECTION)
+                elif _QDRANT_PATH:
                     _qdrant_client = QdrantClient(path=_QDRANT_PATH)
                     logger.info("Qdrant local disk modu: %s/%s", _QDRANT_PATH, _COLLECTION)
                 else:
                     _qdrant_client = QdrantClient(host=_QDRANT_HOST, port=_QDRANT_PORT, timeout=10)
-                    logger.info("Qdrant bağlantısı OK: %s:%d/%s", _QDRANT_HOST, _QDRANT_PORT, _COLLECTION)
+                    logger.info(
+                        "Qdrant host:port modu: %s:%d/%s", _QDRANT_HOST, _QDRANT_PORT, _COLLECTION
+                    )
                 _qdrant_client.get_collection(_COLLECTION)
 
             # LLM chain
             if _llm_chain is None:
                 from backend.rag_common import build_chain
+
                 _llm_chain = build_chain()
 
             _initialized = True
@@ -120,6 +130,7 @@ def _init_v2() -> None:
 # Hybrid Search (Qdrant)
 # ---------------------------------------------------------------------------
 
+
 def _hybrid_search_v2(
     search_query: str,
     category: str = "genel",
@@ -132,18 +143,14 @@ def _hybrid_search_v2(
         (results, effective_category)
     """
     import time
+
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
     _t_embed = time.perf_counter()
-    q_vec = _embedding_model.encode(
-        search_query, normalize_embeddings=True
-    ).tolist()
+    q_vec = _embedding_model.encode(search_query, normalize_embeddings=True).tolist()
     logger.info("⏱ embed=%.3fs", time.perf_counter() - _t_embed)
 
-    apply_filter = (
-        category != "genel"
-        and category in KNOWN_CATEGORIES_V2
-    )
+    apply_filter = category != "genel" and category in KNOWN_CATEGORIES_V2
 
     qdrant_filter = None
     if apply_filter:
@@ -181,6 +188,7 @@ def _hybrid_search_v2(
 # Cross-Encoder Reranker
 # ---------------------------------------------------------------------------
 
+
 def _rerank(
     query: str,
     docs: list[dict],
@@ -197,15 +205,14 @@ def _rerank(
         logger.exception("Reranker hatası — sıralama korunuyor: %s", exc)
         return docs[:top_k]
 
-    ranked = sorted(
-        zip(scores, docs), key=lambda x: x[0], reverse=True
-    )
+    ranked = sorted(zip(scores, docs, strict=False), key=lambda x: x[0], reverse=True)
     return [doc for _, doc in ranked[:top_k]]
 
 
 # ---------------------------------------------------------------------------
 # Ana fonksiyon
 # ---------------------------------------------------------------------------
+
 
 def ask_question_v2(
     query: str,
@@ -239,9 +246,7 @@ def ask_question_v2(
     # ── Embedding + Qdrant arama ───────────────────────────────────────────
     _t = time.perf_counter()
     try:
-        raw_docs, effective_category = _hybrid_search_v2(
-            search_query, category=detected, k=k
-        )
+        raw_docs, effective_category = _hybrid_search_v2(search_query, category=detected, k=k)
     except Exception as exc:
         logger.exception("Qdrant arama hatası: %s", exc)
         raise RuntimeError(f"Qdrant arama hatası: {exc}") from exc
@@ -263,24 +268,27 @@ def ask_question_v2(
     sources: list[dict] = []
     for doc in reranked[:3]:
         page = doc.get("page")
-        sources.append({
-            "page":    (page + 1) if isinstance(page, int) else "?",
-            "url":     doc.get("url", ""),
-            "snippet": doc.get("text", "")[:200].strip(),
-        })
+        sources.append(
+            {
+                "page": (page + 1) if isinstance(page, int) else "?",
+                "url": doc.get("url", ""),
+                "snippet": doc.get("text", "")[:200].strip(),
+            }
+        )
 
     history_text = format_history(history)
 
     label = CATEGORY_LABELS.get(effective_category, effective_category)
     category_context = (
         f"\nŞu an '{label}' kategorisindeki belgelere dayanarak cevap veriyorsun.\n"
-        if effective_category != "genel" else ""
+        if effective_category != "genel"
+        else ""
     )
 
     payload = {
-        "context":          context,
-        "question":         query,
-        "history":          history_text,
+        "context": context,
+        "question": query,
+        "history": history_text,
         "category_context": category_context,
     }
 
@@ -314,9 +322,9 @@ def ask_question_v2(
     )
 
     return {
-        "answer":   response.content,
-        "sources":  sources,
+        "answer": response.content,
+        "sources": sources,
         "category": effective_category,
-        "engine":   "v2",
-        "timings":  timings,
+        "engine": "v2",
+        "timings": timings,
     }
