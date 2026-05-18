@@ -208,14 +208,15 @@ def _build_qdrant_retriever(
             filter_condition = Filter(
                 must=[FieldCondition(key="doc_category", match=MatchValue(value=category))]
             )
-        results = client.search(
+        response = client.query_points(
             collection_name=collection,
-            query_vector=("dense", query_vector),
+            query=query_vector,
+            using="dense",
             query_filter=filter_condition,
             limit=k,
             with_payload=True,
         )
-        return [r.payload for r in results]
+        return [r.payload for r in response.points]
 
     return retriever
 
