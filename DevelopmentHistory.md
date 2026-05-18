@@ -54,6 +54,88 @@ Her Claude Code session'ı sonunda aşağıdaki bloğu kopyalayıp dosyanın **e
 
 ---
 
+## 2026-05-18 — eval.py query_points Migrasyonu + Prompt Halüsinasyon Önleme
+
+**Session bağlamı:** Testçi arkadaş iki kritik zafiyet raporladı: (1) `eval.py` içinde `client.search()` kullanımı `AttributeError` veriyor (Qdrant yeni sürümde bu metodu kaldırdı), (2) Bot "Çift Anadal (ÇAP)" sorusunda Qdrant'tan belge bulamadığında "bilmiyorum" demek yerine uydurma "15-25.pdf" linki üretiyor.
+**Hedef:** Eval testlerini tekrar çalışır duruma getirmek ve URL/dosya adı halüsinasyonunu prompt seviyesinde engellemek.
+
+### Yapılan Değişiklikler
+- `backend/pipeline_v2/evaluation/eval.py` — `_build_qdrant_retriever` içinde `client.search()` → `client.query_points()`:
+  - `query_vector=("dense", ...)` → `query=query_vector, using="dense"`
+  - `results` → `response.points` (yeni API dönüş yapısı)
+  - `query_v2.py` ile aynı pattern'e hizalandı.
+- `backend/prompts/system_prompt.txt` — Kural 1'e URL/link/dosya adı uydurma yasağı eklendi:
+  - "URL, link, PDF/dosya adı (örn. `15-25.pdf`), yönetmelik/madde numarası, telefon, e-posta, tarih ve sayısal değerleri ASLA uydurma. Yalnızca DÖKÜMAN içinde harfi harfine geçiyorsa aktarabilirsin."
+  - "DÖKÜMAN'da link/PDF yoksa link verme; Kural 6 asistif şablonunu uygula."
+
+### Yeni / Silinen Dosyalar
+Yok.
+
+### Mimari / Davranış Etkisi
+- **eval.py:** İç değişiklik — eval metrik suite tekrar çalışır. Retrieval davranışı aynı.
+- **system_prompt.txt:** Davranış değişikliği — bot artık URL/dosya adı uyduramaz; context boş geldiğinde Kural 6 asistif pattern'e yönlenir.
+
+### ÇAP Root Cause
+`ingestion_list.json`'da Çift Anadal yönetmeliği hiç yok → pipeline'a eklenmemiş → Qdrant boş context döndürüyor → eski prompt bot'un plausible bir PDF adı üretmesine izin veriyordu. Prompt fix anlık çözüm; kalıcı çözüm için ÇAP yönetmeliğini `ingestion_list.json`'a ekleyip pipeline çalıştırmak gerekir.
+
+### Test Durumu
+- `pytest tests/ -v`: çalıştırılmadı (pre-commit ruff + ruff-format geçti).
+- `pytest -m slow`: testçi arkadaş `git pull origin test` sonrası çalıştıracak.
+- Pre-commit: geçti (ruff + ruff-format).
+- Manuel test: yapılmadı.
+
+### CLAUDE.md Güncellemesi
+- [x] Section 11 (system prompt özeti — Kural 1 sıkılaşması kaydedildi)
+
+### Kullanıcıya Notlar
+1. Testçi arkadaş `git pull origin test` yapıp Ragas testlerini tekrar çalıştırmalı — `query_points` fix ile Hit Rate/MRR testleri yeşile dönmeli.
+2. ÇAP sorusunda bot artık uydurma link üretmeyecek; "Bu detay elimdeki kaynaklarda yer almıyor" + alternatif konular önerecek.
+3. ÇAP yönetmeliğini ingest etmek istersen: `ingestion_list.json`'a kategori ekle → `full_pipeline_job` çalıştır.
+
+### Commit
+- `4ebc8ef` — development + test branch'lerine push edildi.
+
+---
+
+## 2026-05-17 — Qdrant Cloud Migrasyonu + Pipeline .env Fix
+
+**Session bağlamı:** Testçi arkadaş WinError 10061 (bağlantı reddedildi) alıyordu — yerel Qdrant kurulumu olmadığı için. Çözüm: tüm projeyi Qdrant Cloud'a (QDRANT_URL + QDRANT_API_KEY) taşıyarak testçinin Docker/yerel kurulum gerekmeden çalışabilmesi sağlandı. Ayrıca Dagster pipeline'ının `.env` dosyasını okuyamadığı keşfedildi.
+**Hedef:** Tüm Qdrant bağlantı noktalarını Cloud destekli hale getirmek; testçiye yalnızca `git pull + .env` yeterli olsun.
+
+### Yapılan Değişiklikler
+- `backend/query_v2.py` — `_QDRANT_URL` + `_QDRANT_API_KEY` sabitleri eklendi; `_init_v2()` Qdrant bloğu Cloud > Local disk > Host:port öncelik sırasına güncellendi.
+- `backend/main.py` — `/health` endpoint Qdrant kontrol bloğu aynı öncelik sırasına güncellendi (Cloud > disk > host:port).
+- `backend/pipeline_v2/resources/qdrant_resource.py` — `QdrantResource`'a `url: str = ""` ve `api_key: str = ""` alanları eklendi; `get_client()` Cloud branch'i eklendi.
+- `backend/pipeline_v2/definitions.py` — `load_dotenv()` çağrısı tüm import'lardan sonra, `_resources` bloğundan önce taşındı (Dagster modül yükleme sırasında env var'lar okunmadan önce `.env` yüklenmesini sağlıyor); `QdrantResource` instantiation'ına `url=` ve `api_key=` parametreleri eklendi.
+- `.env.example` — Cloud (Seçenek 1, önerilen), Local disk (Seçenek 2), Host:port (Seçenek 3) olarak yeniden düzenlendi.
+- `CLAUDE.md` Section 10 — `QDRANT_URL` ve `QDRANT_API_KEY` satırları eklendi.
+- `backend/pipeline_v2/evaluation/eval.py` — `_build_qdrant_retriever`'a `url` + `api_key` parametreleri eklendi; `run_evaluation` env'den okuyacak şekilde güncellendi.
+
+### Yeni / Silinen Dosyalar
+Yok.
+
+### Mimari / Davranış Etkisi
+**Bağlantı önceliği değişti:** `QDRANT_URL` set edilmişse artık her zaman Cloud kullanılıyor (query, health, pipeline, eval). Breaking change değil — `.env` dosyasındaki Qdrant seçeneğini kontrol et.
+
+### Test Durumu
+- Cloud bağlantısı: testçi tarafından doğrulandı (WinError çözüldü, API 200 dönüyor).
+- `pytest -m slow`: testçinin çalıştırması bekleniyor.
+- Pre-commit: geçti (ruff E402 fix dahil).
+
+### CLAUDE.md Güncellemesi
+- [x] Section 10 (env değişkenleri — QDRANT_URL, QDRANT_API_KEY eklendi)
+- [x] Section 7 (Qdrant bağlantı önceliği notu)
+
+### Kullanıcıya Notlar
+1. `.env` dosyasına `QDRANT_URL=https://xxx.qdrant.io` ve `QDRANT_API_KEY=...` eklenmeli — aksi halde local moda düşer.
+2. Testçi artık yalnızca `git pull origin test` + `.env` oluşturarak çalıştırabilir; Docker veya yerel Qdrant kurulumu gerekmiyor.
+3. `definitions.py`'daki `load_dotenv()` sıralaması kritik — yerini değiştirme (ruff E402 uyarısı kasıtlı olarak import sırasına alındı).
+
+### Commit
+- `b3400f5` (Cloud desteği), `c8f7fe5` (definitions.py load_dotenv fix) — development + test branch'lerine push edildi. Testçi arkadaşın 8 QA automation commit'i (`bu-chatbot-qa-automation/`) de test branch'ine merge edildi.
+
+---
+
 ## 2026-05-16 — System Prompt Asistif Fallback Revizyonu (UX iyileştirme)
 
 **Session bağlamı:** Kullanıcı, chatbot'un dokümantasyonda olmayan veya öznel sorulara verdiği "Bu konu hakkında elimde yeterli bilgi bulunmuyor." şeklindeki tek satırlık ret cevabının kullanıcı deneyimini olumsuz etkilediğini belirtti. Bunun yerine asistif, alternatif öneren ve soruya soruyla cevap veren (dialog'u sürdüren) bir davranış istedi.
