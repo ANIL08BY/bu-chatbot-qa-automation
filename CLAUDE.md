@@ -506,7 +506,7 @@ proxy: { '/api': { target: 'http://127.0.0.1:8000', rewrite: p => p.replace(/^\/
 12 kurallı, Türkçe RAG prompt'u. Template değişkenleri: `{context}`, `{question}`, `{history}`, `{category_context}`.
 
 **Önemli kurallar (özet):**
-1. Sadece DÖKÜMAN içeriği — uydurma yok (alternatif konu önerirken de geçerli)
+1. Sadece DÖKÜMAN içeriği — uydurma yok (alternatif konu önerirken de geçerli). **URL, PDF/dosya adı, madde numarası, telefon, tarih, sayı ASLA uydurulmamalı** — yalnızca DÖKÜMAN'da harfi harfine geçiyorsa aktarılabilir (2026-05-18 sıkılaştırması: ÇAP testinde bot uydurma "15-25.pdf" linki üretiyordu).
 2. Madde alıntısı tam (kırpma yok)
 3. Sayım sorgularında tüm öğeleri say
 4. Kesin tarihler ("yaklaşık" yasak)
