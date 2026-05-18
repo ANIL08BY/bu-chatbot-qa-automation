@@ -13,7 +13,7 @@ pytestmark = pytest.mark.asyncio
 
 # Groq LLM'i "Hakem (Judge)" olarak tanımla
 # Not: .env dosyasındaki GROQ_API_KEY'i otomatik kullanacaktır
-evaluator_llm = ChatGroq(model="llama3-8b-8192", temperature=0.0)
+evaluator_llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.0)
 
 # Hakem Yapay Zekaya vereceğim değerlendirme talimatı (Prompt)
 FAITHFULNESS_PROMPT = PromptTemplate.from_template(

@@ -29,7 +29,7 @@ def test_evaluation_hit_rate(mock_db_and_query):
     # Modül koşusu yapılır. Beklenen format içerisinde sözlük döner -> Örn: {"hit_rate": 0.65} 
     results = run_evaluation()
     
-    hit_rate = results.get("hit_rate", 0.0)
+    hit_rate = results.get("hit_rate@5", 0.0)
 
     # 0.5 Oran sınır ihlallerinden muhafaf ve doğru aradığımız/bota sorduğumuz parça metinin %50 üzerinde bulunduğunu tasdik et!.
     assert hit_rate >= 0.5, (
