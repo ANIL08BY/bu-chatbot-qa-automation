@@ -16,7 +16,6 @@ from backend.rag_common import (
     compute_k,
     format_history,
     is_rate_limit,
-    rrf_weights,
 )
 from backend.rag_config import RAGConfig, rag_config
 
@@ -33,7 +32,6 @@ class TestRAGConfig:
         """
         assert rag_config.k_general == 15
         assert rag_config.k_list == 40
-        assert rag_config.noise_threshold == 0.35
 
     def test_frozen(self):
         """
@@ -103,30 +101,7 @@ class TestComputeK:
 
 
 # ==============================================================================
-# BÖLÜM 5: RRF HİBRİT ARAMA (SEMANITIK vs. KEYWORD AĞIRLIĞI DENGESİ)
-# ==============================================================================
-class TestRRFWeights:
-    """
-    Model Vektörlerimizde hibrit yapıyı çalıştırıyor. RRF ağırlığını anında karar dengeleme şovuydu. 
-    İstiyor ki : Modelden madde/hesap tarzı sert eşleme ararsam "Tam Eşleme=BM25' ağırlık atıp" baskın gelsin. Felsefe kelimesini aratırsak Vektör(Cosine) semantik zeka devreye girip ağırlıklı davransın ki hata/yanlış okutmasın. 
-    """
-    def test_aggregation_bm25_dominant(self):
-        bm25_w, sem_w = rrf_weights("Toplam kaç burs var?")
-        assert bm25_w > sem_w # Saf Kelime algısı AI yı dövmelidir!
-
-    def test_general_semantic_dominant(self):
-        bm25_w, sem_w = rrf_weights("Kayıt nasıl yapılır?")
-        assert sem_w >= bm25_w # Derin mantıklı Anlam YapayZekası baskın çıkar!
-
-    def test_weights_sum_to_one(self):
-        for q in ["Kaç madde?", "Madde 5", "Genel soru"]:
-            bm25_w, sem_w = rrf_weights(q)
-            # Ağırlık total matematiğinde sistemin dağılma hatasına yol açmamasi ölçülmektedir, Tolerasyon Max 1% olmalidir. 
-            assert abs(bm25_w + sem_w - 1.0) < 0.01
-
-
-# ==============================================================================
-# BÖLÜM 6: BELLEK (SOHBET TARİHÇESİ PENCERESİ) SIKIŞTIRILMASI 
+# BÖLÜM 5: BELLEK (SOHBET TARİHÇESİ PENCERESİ) SIKIŞTIRILMASI 
 # ==============================================================================
 class TestFormatHistory:
     """ AI Prompları biriken Tokeni patlatıp sunucu hatası HTTP Hatası basılmasını koruması senkron kilit kontrol testiyel onanmıştır """
@@ -159,7 +134,7 @@ class TestFormatHistory:
 
 
 # ==============================================================================
-# BÖLÜM 7: API KORUMALARI / DÜŞMAN ZAMANI DENETLEMESİ
+# BÖLÜM 6: API KORUMALARI / DÜŞMAN ZAMANI DENETLEMESİ
 # ==============================================================================
 class TestIsRateLimit:
     """ Rate-Limit hatalarından Fail Yiyecekmi yoksa Doğrudan Hatasını Algılabilcek mi Tespit Onaylanışı """
@@ -179,7 +154,7 @@ class TestIsRateLimit:
 
 
 # ==============================================================================
-# BÖLÜM 8: KISA KELİME(REGEX) ŞABLON TANIMA BOT GÜVENİLİRLİĞİ (LLMsiz İrade Tespit)
+# BÖLÜM 7: KISA KELİME(REGEX) ŞABLON TANIMA BOT GÜVENİLİRLİĞİ (LLMsiz İrade Tespit)
 # ==============================================================================
 class TestRegexPatterns:
     

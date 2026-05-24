@@ -13,7 +13,6 @@ httpx
 locust
 
 # Yapay Zeka Değerlendirme (AI Eval & RAG)
-ragas
 langchain-core
 langchain-groq
 
