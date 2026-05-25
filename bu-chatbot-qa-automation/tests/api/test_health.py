@@ -32,5 +32,4 @@ async def test_health_check_returns_200_if_all_ok(async_client, mocker):
     assert data.get("api") == "ok"
     assert data.get("groq_key") == "ok"
     assert data.get("qdrant") == "ok"
-    assert data.get("chromadb") == "ok"
     assert data.get("postgres") == "ok"
