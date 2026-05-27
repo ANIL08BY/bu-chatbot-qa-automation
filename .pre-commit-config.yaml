@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/|^tests/
+      - id: ruff-format
+        files: ^backend/|^tests/
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd frontend && npm run lint -- --max-warnings 0'
+        language: system
+        files: \.(ts|tsx)$
+        pass_filenames: false
+
+      - id: tsc
+        name: TypeScript type check
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        files: \.(ts|tsx)$
+        pass_filenames: false
