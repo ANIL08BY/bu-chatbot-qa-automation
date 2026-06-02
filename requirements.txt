@@ -18,14 +18,3 @@ langchain-groq
 
 # Test Raporlama
 allure-pytest
-
-
-# 
-    httpx: test_feedback.py ve test_toxicity.py dosyalarındaki AsyncClient ile sunucuya sanal istekler atmayı sağlayan kütüphane.
-
-    langchain-groq: Llama 3.1 hakem modelimizi çalıştıran anahtar paket.
-
-    langchain-core: Hakem botunu eğitirken kullandığımı "Sadece 0 veya 1 dön" dediğim PromptTemplate yapısını sağlayan çekirdek kütüphane.
-
-    pytest-playwright: Playwright'ın Pytest ile tam uyumlu ve sorunsuz çalışmasını (tarayıcı context'lerini yönetmesini) sağlayan eklenti.
-#
