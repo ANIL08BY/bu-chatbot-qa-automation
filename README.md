@@ -1,6 +1,6 @@
-# BU Chatbot - Test Otomasyonu
+# Belek AI - Test Projesi
 
-Bu depo, Antalya Belek Üniversitesi Chatbot sisteminin uçtan uca (E2E), API, siber güvenlik, performans ve Yapay Zeka (LLM) doğruluk metriklerinin test edilmesi için kurulmuş profesyonel ve izole bir test otomasyon altyapısıdır.
+Bu depo, Antalya Belek Üniversitesi Chatbot sisteminin uçtan uca (E2E), API, siber güvenlik, performans ve Yapay Zeka (LLM) doğruluk metriklerinin test edilmesi için kurulmuş profesyonel ve izole bir test altyapısıdır.
 
 ## Kullanılan Teknolojiler
 
@@ -13,7 +13,7 @@ Bu depo, Antalya Belek Üniversitesi Chatbot sisteminin uçtan uca (E2E), API, s
 
 ## Kurulum ve Çalıştırma (Kurulum Kılavuzu)
 
-Test otomasyon projesini yerel makinenizde ayağa kaldırmak için aşağıdaki adımları izleyin:
+Test projesini yerel makinenizde ayağa kaldırmak için aşağıdaki adımları izleyin:
 
 1. **Sanal Ortamı Oluşturun ve Aktif Edin:**
    python -m venv venv
@@ -69,7 +69,7 @@ Test otomasyon projesini yerel makinenizde ayağa kaldırmak için aşağıdaki 
 
 ## Sistem Genel Mimarisi
 
-Aşağıdaki diyagramda, geliştirdiğimiz QA test otomasyon ekosisteminin, Yusuf tarafından geliştirilen ana chatbot çekirdek sistemi (React, FastAPI, PostgreSQL, Qdrant) ile nasıl entegre olduğu ve hangi katmanı nasıl denetlediği modellenmiştir:
+Aşağıdaki diyagramda, geliştirdiğimiz QA test ekosisteminin, Yusuf tarafından geliştirilen ana chatbot çekirdek sistemi (React, FastAPI, PostgreSQL, Qdrant) ile nasıl entegre olduğu ve hangi katmanı nasıl denetlediği modellenmiştir:
 
 ```mermaid
 graph TB
@@ -77,7 +77,7 @@ graph TB
     User((Üniversite<br>Kullanıcısı))
     Developer((Geliştirici / <br>Test Mühendisi))
 
-    subgraph QASystem["QA & Test Otomasyon Ekosistemi (Test Projesi)"]
+    subgraph QASystem["QA & Test Ekosistemi (Test Projesi)"]
         direction TB
         Orchestrator{Pytest<br>Test Orkestratörü}
 
