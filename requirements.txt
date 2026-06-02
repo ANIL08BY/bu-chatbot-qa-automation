@@ -6,18 +6,17 @@ uvicorn[standard]>=0.40.0,<1.0
 langchain>=1.2.0,<2.0
 langchain-community>=0.4.0,<1.0
 langchain-groq>=1.1.0,<2.0
-langchain-chroma>=1.1.0,<2.0
 langchain-huggingface>=1.2.0,<2.0
 langchain-text-splitters>=1.1.0,<2.0
 
+# Alternatif LLM provider'ları (LLM_PROVIDER=openai veya gemini için)
+langchain-openai>=0.2.0,<1.0
+langchain-google-genai>=2.0.0,<3.0
+
 # Vector DB + Embedding
-chromadb>=1.5.0,<2.0
 qdrant-client>=1.9.0,<2.0
 sentence-transformers>=5.0.0,<6.0
 huggingface-hub>=0.36.0,<1.0
-
-# BM25 (hibrit arama)
-rank_bm25>=0.2.2,<1.0
 
 # PDF çıkarma
 pdfplumber>=0.11.0,<1.0

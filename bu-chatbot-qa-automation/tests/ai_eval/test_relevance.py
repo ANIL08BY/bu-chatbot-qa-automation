@@ -20,10 +20,10 @@ RELEVANCE_EVAL_PROMPT = PromptTemplate.from_template(
 )
 
 @pytest.mark.parametrize("relevant_question", [
-    "Yazılım Mühendisliği bölümünün öğretim dili (Türkçe mi İngilizce mi) nedir?",
-    "Öğrenci işlerinin iletişim veya telefon numarası nedir?",
-    "Üniversitenin misyonu ve vizyonu tam olarak nedir?"
-])
+        "Belek Üniversitesi nerede bulunmaktadır?",
+        "Üniversitenin kütüphane çalışma saatleri nedir?",
+        "Üniversitenin misyonu ve vizyonu tam olarak nedir?"
+    ])
 async def test_answer_relevance_metric(async_client, relevant_question):
     """
     Answer Relevance Testi: Botun sorulara dolambaçlı değil, 

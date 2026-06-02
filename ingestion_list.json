@@ -322,5 +322,185 @@
     "category": "üniversiteye ulaşım",
     "priority": 1,
     "depth": 1
+  },
+  {
+    "url": "https://stf.belek.edu.tr/Home/Kalite/2520",
+    "category": "sanat ve tasarım fakültesi kalite dökümanları",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://stf.belek.edu.tr/Home/Page/101",
+    "category": "sanat ve tasarım fakültesi hakkında bilgi",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://ibf.belek.edu.tr/Home/Page/96",
+    "category": "İnsani Bilimler Fakültesi hakkında",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://iibf.belek.edu.tr/Home/Page/95",
+    "category": "İktisadi ve İdari Bilimler Fakültesi Hakkında",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://mmf.belek.edu.tr/Home/Page/98",
+    "category": "Mühendislik ve Mimarlık Fakültesi hakkında",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://myo.belek.edu.tr/Home/Page/97",
+    "category": "Meslek Yüksekokulu(MYO) hakkında",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/MenuPage/19",
+    "category": "19",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/40",
+    "category": "About International Relations",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/46",
+    "category": "ECTS",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/47",
+    "category": "Course Catalouge",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/MenuPage/5",
+    "category": "FAQ(Sıkça sorulan sorular)",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Akademi/yatay005.pdf",
+    "category": "Yatay geçiş ve başvurusu",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/AntalyaBelekUniversitesi/dgs_hakkinda.pdf",
+    "category": "DGS Hakkında",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/AntalyaBelekUniversitesi/dgs_puanlar.pdf",
+    "category": "2023 DSG Kontenjanları ve taban puanları",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Akademi/aday00006.pdf",
+    "category": "YKS Ek kontenjan, taban puan ve ücretler",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://kutuphane.belek.edu.tr/Home/Page/93",
+    "category": "Kütüphane e-kaynaklar",
+    "priority": 1,
+    "crawl_linked_docs": false
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/NewsOne/471",
+    "category": "kayıt için gerekli belgeler - adımlar",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Akademi/bolumler",
+    "category": "tüm bölümler ve programlar",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Akademi/ders-programlari",
+    "category": "tüm ders programları",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Akademi/cap-yap",
+    "category": "çift anadal yandal imkanları",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Akademi/mezuniyet-sartlari",
+    "category": "mezuniyet şartları",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/71",
+    "category": "burs başvuruları hakkında",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/52",
+    "category": "spor tesisleri ve sosyal alanlar hakkında bilgi",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Akademi/sinav-itiraz",
+    "category": "sınav sonuçlarına itiraz",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Akademi/butunleme-sinavlari",
+    "category": "bütünleme ve telafi sınavları",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://erasmus.belek.edu.tr",
+    "category": "Erasmus + programına başvuru",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/91",
+    "category": "Kariyer merkezi hizmetleri",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Pages/Page/59",
+    "category": "Yönetim ve kadrosu",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Pages/Page/547",
+    "category": "İdari Birimler ve kadrosu",
+    "priority": 1,
+    "depth": 1
+  },
+  {
+    "url": "https://www.belek.edu.tr/Home/Page/56",
+    "category": "Uluslararası",
+    "priority": 1,
+    "depth": 1
   }
 ]

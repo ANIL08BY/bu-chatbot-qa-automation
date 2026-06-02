@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import sys
 import os
 
@@ -96,3 +97,23 @@ def mock_db_and_query(mocker):
     # 2. Asenkron DB log kaydını atla (Şema şu an olmadığı için test patlamasın)
     # db.log_interaction ASENKRON (await) olduğu için AsyncMock ZORUNLUDUR!
     mocker.patch("backend.main.db.log_interaction", new_callable=AsyncMock)
+=======
+"""
+Pytest fixture'ları — test altyapısı.
+
+External servisleri (Groq, Qdrant, embedding model) mock'lar.
+"""
+from __future__ import annotations
+
+import os
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _set_test_env(monkeypatch):
+    """Testlerde gerçek API çağrısı yapılmasını engelle."""
+    monkeypatch.setenv("GROQ_API_KEY", "test-key-not-real")
+    monkeypatch.setenv("QDRANT_HOST", "localhost")
+    monkeypatch.setenv("QDRANT_PORT", "6333")
+>>>>>>> ortak-yeni/main

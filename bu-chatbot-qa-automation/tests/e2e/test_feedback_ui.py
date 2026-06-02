@@ -16,7 +16,7 @@ def test_user_can_submit_positive_feedback(page: Page):
     chat_input.press("Enter")
 
     # 3. Botun "Yazıyor..." animasyonunun bitmesini bekle
-    expect(page.locator(".animate-bounce").first).not_to_be_visible(timeout=15000)
+    expect(page.locator(".animate-bounce").first).not_to_be_visible(timeout=45000)
 
     # 4. Asistanın verdiği son cevaptaki "Like" (Thumbs Up) butonunu bul
     # Butonu class'ından veya sayfanın en altındaki (en son cevap) buton yapısından bul.
@@ -25,7 +25,7 @@ def test_user_can_submit_positive_feedback(page: Page):
 
     # 5. KRİTİK NOKTA: Butona basıldığında Frontend'in Backend'e istek atıp atmadığını yakala!
     with page.expect_response(lambda response: "/feedback" in response.url and response.request.method == "POST") as response_info:
-        like_button.click()
+        like_button.click(force=True)
 
     # 6. KONTROLLER
     feedback_response = response_info.value

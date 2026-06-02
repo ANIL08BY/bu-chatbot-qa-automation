@@ -1,5 +1,5 @@
 """
-BU Chatbot API — FastAPI giriş noktası.
+Belek AI API — FastAPI giriş noktası.
 
 Endpoint'ler:
   POST /ask    — Soru-cevap (rate-limited)
@@ -88,7 +88,11 @@ def _preload_models() -> None:
 # App
 # ---------------------------------------------------------------------------
 
+<<<<<<< HEAD
 app = FastAPI(title="BU Chatbot API", version="2.0", lifespan=lifespan)
+=======
+app = FastAPI(title="Belek AI API", version="2.0", lifespan=lifespan)
+>>>>>>> ortak-yeni/main
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

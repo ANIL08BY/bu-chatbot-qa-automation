@@ -2,7 +2,10 @@
 Soru-Cevap Motoru — Qdrant Hybrid Search + Cross-Encoder Reranking.
 
 Pipeline: Qdrant built-in hybrid (dense + BM42 sparse) + bge-reranker-base
-LLM:      Groq llama-3.3-70b → llama-4-scout → llama-3.1-8b-instant fallback
+LLM:      LLM_PROVIDER env var ile seçilir (varsayılan: groq)
+          - groq:   llama-3.3-70b → llama-4-scout → llama-3.1-8b-instant fallback
+          - openai: gpt-4o-mini
+          - gemini: gemini-2.0-flash → gemini-1.5-flash fallback
 
 Lazy initialization: Tüm modeller ilk istekte yüklenir.
 Qdrant veya LLM erişilemezse RuntimeError fırlatır → main.py 503 olarak döner.
@@ -18,7 +21,6 @@ from dotenv import load_dotenv
 
 from backend.pipeline_v2.config_v2 import KNOWN_CATEGORIES_V2
 from backend.rag_common import (
-    CATEGORY_LABELS,
     LIST_RE,
     analyze_query,
     compute_k,
@@ -135,12 +137,13 @@ def _hybrid_search_v2(
     search_query: str,
     category: str = "genel",
     k: int = 10,
-) -> tuple[list[dict], str]:
+) -> tuple[list[dict], str, bool]:
     """
     Qdrant hybrid arama: dense + BM42.
 
     Returns:
-        (results, effective_category)
+        (results, effective_category, used_fallback)
+        used_fallback=True → kategori filtresi yetersiz kaldı, tüm koleksiyondan arama yapıldı.
     """
     import time
 
@@ -174,14 +177,16 @@ def _hybrid_search_v2(
     multiplier = 3 if k >= 20 else 2
     results = _search(qdrant_filter, k * multiplier)
 
+    used_fallback = False
     if apply_filter and len(results) < _cfg.min_category_results:
-        logger.info("Kategori '%s' için az sonuç, fallback.", category)
+        logger.info("Kategori '%s' için az sonuç (%d), genel fallback.", category, len(results))
         results = _search(None, k * multiplier)
         apply_filter = False
+        used_fallback = True
 
     effective = category if apply_filter else "genel"
     payloads = [r.payload for r in results]
-    return payloads, effective
+    return payloads, effective, used_fallback
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +242,9 @@ def ask_question_v2(
     timings["init"] = time.perf_counter() - _t
 
     # ── Sorgu analizi (Groq) ───────────────────────────────────────────────
+    # history iletiliyor: follow-up sorguları ("hepsini listele") bağlamla çözümlenir.
     _t = time.perf_counter()
-    detected, search_query = analyze_query(query)
+    detected, search_query = analyze_query(query, history=history)
     timings["analyze_query"] = time.perf_counter() - _t
 
     k = compute_k(query)
@@ -246,21 +252,28 @@ def ask_question_v2(
     # ── Embedding + Qdrant arama ───────────────────────────────────────────
     _t = time.perf_counter()
     try:
-        raw_docs, effective_category = _hybrid_search_v2(search_query, category=detected, k=k)
+        raw_docs, effective_category, used_fallback = _hybrid_search_v2(
+            search_query, category=detected, k=k
+        )
     except Exception as exc:
         logger.exception("Qdrant arama hatası: %s", exc)
         raise RuntimeError(f"Qdrant arama hatası: {exc}") from exc
     timings["embed_and_search"] = time.perf_counter() - _t
 
     # ── Reranking ─────────────────────────────────────────────────────────
+    # Not: Reranker'a raw query kullanıyoruz (search_query değil).
+    # search_query denenmiş ancak Q4, Q5, Q6'da regresyon yarattığı için geri alındı.
+    # Neden: search_query bazı edge-case sorgularda (öznel/genel) beklenmedik chunk'ları
+    # öne çıkarıyordu (örn. "kampüs güzel mi" → tıbbi bitkiler, sosyoloji sızması).
     is_list_query = bool(LIST_RE.search(query))
     _t = time.perf_counter()
     if is_list_query:
-        reranked = raw_docs[:k]
-        timings["rerank"] = 0.0
+        # Liste sorgularında daha geniş top_k ile rerank: en alakalı chunk öne gelsin.
+        # top_k = k*1.5 → reranker büyük listede doğru chunk'ı seçer; ardından k'ya kırp.
+        reranked = _rerank(query, raw_docs, top_k=int(k * 1.5))[:k]
     else:
         reranked = _rerank(query, raw_docs, top_k=k)
-        timings["rerank"] = time.perf_counter() - _t
+    timings["rerank"] = time.perf_counter() - _t
 
     # ── Context ve kaynak kartları ────────────────────────────────────────
     context = "\n\n".join(doc.get("text", "") for doc in reranked)
@@ -278,12 +291,20 @@ def ask_question_v2(
 
     history_text = format_history(history)
 
-    label = CATEGORY_LABELS.get(effective_category, effective_category)
-    category_context = (
-        f"\nŞu an '{label}' kategorisindeki belgelere dayanarak cevap veriyorsun.\n"
-        if effective_category != "genel"
-        else ""
-    )
+    # Kategori adını LLM'e vermiyoruz — yalnızca "belge güveni" bayrağı iletilir.
+    # Bu, LLM'nin yanıtta kategori adı/etiketi telaffuz etmesini önler.
+    if effective_category != "genel" and not used_fallback:
+        category_context = (
+            "\nNOT: Aşağıdaki belgeler kullanıcının sorduğu konuyla doğrudan eşleşiyor.\n"
+        )
+    elif used_fallback:
+        category_context = (
+            "\nNOT: Aşağıdaki belgeler kullanıcının sorduğu spesifik konuyla doğrudan "
+            "eşleşmeyebilir; yanıtında belge yetersizliğini Kural 6 şablonuyla belirt. "
+            "Belirli bir kategori adı, etiket veya kaynak adı ASLA telaffuz etme.\n"
+        )
+    else:
+        category_context = ""
 
     payload = {
         "context": context,

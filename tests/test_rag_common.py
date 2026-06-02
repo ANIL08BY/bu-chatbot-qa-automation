@@ -29,7 +29,11 @@ class TestRAGConfig:
         assert rag_config.k_specific == 5
         assert rag_config.reranker_max_length == 512
         assert rag_config.max_history_messages == 6
+<<<<<<< HEAD
         assert rag_config.min_category_results == 3
+=======
+        assert rag_config.min_category_results == 1  # Katman 2 opt: 3→1 (sızıntı azaltma)
+>>>>>>> ortak-yeni/main
 
     def test_frozen(self):
         import pytest

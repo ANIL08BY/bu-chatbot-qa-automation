@@ -22,8 +22,9 @@ class RAGConfig:
     # Konuşma geçmişi
     max_history_messages: int = 6
 
-    # Kategori fallback eşiği — sonuç < bu sayı ise "genel" kategorisine geç
-    min_category_results: int = 3
+    # Kategori fallback eşiği — sonuç < bu sayı ise "genel" kategorisine geç.
+    # 1: kategoride tek chunk bile varsa fallback olmaz; sızıntıyı önler.
+    min_category_results: int = 1
 
 
 # Tek global instance — import edip kullanın

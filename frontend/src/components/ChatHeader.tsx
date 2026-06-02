@@ -1,4 +1,4 @@
-import { PlusCircle, Settings } from 'lucide-react';
+import { PlusCircle, Settings } from "lucide-react";
 
 interface ChatHeaderProps {
   title?: string;
@@ -7,21 +7,33 @@ interface ChatHeaderProps {
   isDarkMode?: boolean;
 }
 
-export function ChatHeader({ title = 'BU Chatbot', onNewChat, onSettingsClick, isDarkMode = false }: ChatHeaderProps) {
-  const hoverBg = isDarkMode ? 'hover:bg-[#7a0e0d]' : 'hover:bg-[#9b1211]';
+export function ChatHeader({
+  title = "Belek AI",
+  onNewChat,
+  onSettingsClick,
+  isDarkMode = false,
+}: ChatHeaderProps) {
+  const hoverBg = isDarkMode ? "hover:bg-[#7a0e0d]" : "hover:bg-[#9b1211]";
 
   return (
-    <header className={`relative px-3 sm:px-6 py-3 flex items-center justify-between gap-2 sm:gap-4 shadow-md ${
-      isDarkMode ? 'bg-[#9b1211]' : 'bg-[#e30613]'
-    }`}>
+    <header
+      className={`relative px-3 sm:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 shadow-md ${
+        isDarkMode ? "bg-[#9b1211]" : "bg-[#e30613]"
+      }`}
+    >
       {/* Left: Logo + Title */}
       <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
         <img
-          src="/logo.png"
+          src="/logo_light-Photoroom.png"
           alt="Belek Üniversitesi Logo"
-          className="w-10 h-10 flex-shrink-0 rounded-full object-contain bg-white/15 p-0.5"
+          className="w-12 h-12 flex-shrink-0 object-contain"
         />
-        <h1 className="text-lg sm:text-xl font-bold text-white leading-tight truncate">{title}</h1>
+        <h1
+          className="text-xl sm:text-2xl font-bold text-white leading-tight truncate ml-1 sm:ml-2"
+          style={{ fontFamily: "'Oxanium', sans-serif" }}
+        >
+          {title}
+        </h1>
       </div>
 
       {/* Center: Slogan — absolute olarak header'ın tam ortasında */}
@@ -39,7 +51,9 @@ export function ChatHeader({ title = 'BU Chatbot', onNewChat, onSettingsClick, i
           className={`flex items-center gap-1.5 text-white border border-white/30 rounded-lg px-2 py-1.5 sm:px-3 transition-colors ${hoverBg}`}
         >
           <PlusCircle size={18} aria-hidden="true" />
-          <span className="hidden sm:inline text-sm font-medium">Yeni Sohbet</span>
+          <span className="hidden sm:inline text-sm font-medium">
+            Yeni Sohbet
+          </span>
         </button>
 
         <button

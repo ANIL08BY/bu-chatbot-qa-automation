@@ -1,4 +1,4 @@
-# BU Chatbot — Mimari Dokümantasyon
+# Belek AI — Mimari Dokümantasyon
 
 ## Veri Akışı
 
@@ -61,15 +61,15 @@ yine `RuntimeError`.
 
 ## Teknoloji Seçimleri
 
-| Bileşen | Teknoloji | Neden |
-|---------|-----------|-------|
-| LLM | Groq (Llama 3.3 70B) | Ücretsiz tier, düşük latency |
-| Vector DB | Qdrant | Built-in hybrid search, dense + BM42 sparse |
-| Embedding | paraphrase-multilingual-mpnet-base-v2 | Türkçe desteği, 768d |
-| Reranker | BAAI/bge-reranker-base | Cross-encoder, query-time reranking |
-| Pipeline | Dagster | Asset-based DAG, incremental processing |
-| PDF Parsing | Docling + TableFormer | Tablo algılama, yapısal çıktı |
-| Web Scraping | Firecrawl | onlyMainContent, temiz markdown |
-| Frontend | React 19 + Vite | Hızlı HMR, TypeScript desteği |
-| Logging DB | PostgreSQL (asyncpg) | Her /ask isteği için atomik transaction kaydı |
-| Rate Limiter | slowapi | /ask → 50/dk, /health → 200/dk |
+| Bileşen      | Teknoloji                             | Neden                                         |
+| ------------ | ------------------------------------- | --------------------------------------------- |
+| LLM          | Groq (Llama 3.3 70B)                  | Ücretsiz tier, düşük latency                  |
+| Vector DB    | Qdrant                                | Built-in hybrid search, dense + BM42 sparse   |
+| Embedding    | paraphrase-multilingual-mpnet-base-v2 | Türkçe desteği, 768d                          |
+| Reranker     | BAAI/bge-reranker-base                | Cross-encoder, query-time reranking           |
+| Pipeline     | Dagster                               | Asset-based DAG, incremental processing       |
+| PDF Parsing  | Docling + TableFormer                 | Tablo algılama, yapısal çıktı                 |
+| Web Scraping | Firecrawl                             | onlyMainContent, temiz markdown               |
+| Frontend     | React 19 + Vite                       | Hızlı HMR, TypeScript desteği                 |
+| Logging DB   | PostgreSQL (asyncpg)                  | Her /ask isteği için atomik transaction kaydı |
+| Rate Limiter | slowapi                               | /ask → 50/dk, /health → 200/dk                |
