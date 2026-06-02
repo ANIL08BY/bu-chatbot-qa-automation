@@ -1,0 +1,4 @@
+load_from:
+  - python_module:
+      module_name: backend.pipeline_v2.definitions
+      working_directory: .

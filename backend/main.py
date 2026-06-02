@@ -1,0 +1,263 @@
+"""
+BU Chatbot API — FastAPI giriş noktası.
+
+Endpoint'ler:
+  POST /ask    — Soru-cevap (rate-limited)
+  GET  /health — Bağımlılık durumu kontrolü
+"""
+
+import logging
+import os
+import re
+import time
+from contextlib import asynccontextmanager
+from urllib.parse import quote_plus
+
+import httpx
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+from . import db
+from .query_v2 import ask_question_v2 as ask_question
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+logger = logging.getLogger(__name__)
+
+limiter = Limiter(key_func=get_remote_address)
+
+# ---------------------------------------------------------------------------
+# DB DSN
+# ---------------------------------------------------------------------------
+
+
+def _build_dsn() -> str:
+    """DB_* env var'larından PostgreSQL DSN oluşturur. Herhangi biri eksikse boş döner."""
+    host = os.getenv("DB_HOST", "")
+    port = os.getenv("DB_PORT", "5432")
+    name = os.getenv("DB_NAME", "")
+    user = os.getenv("DB_USER", "")
+    password = os.getenv("DB_PASSWORD", "")
+    if not all([host, name, user, password]):
+        return ""
+    return f"postgresql://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{name}"
+
+
+# ---------------------------------------------------------------------------
+# Lifespan (startup / shutdown)
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.init_pool(_build_dsn())
+    # Modelleri startup'ta yükle — ilk kullanıcı isteği soğuk başlatmaya kurban gitmesin
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _preload_models)
+    yield
+    await db.close_pool()
+
+
+def _preload_models() -> None:
+    """Embedding ve reranker modellerini arka planda yükle."""
+    try:
+        from backend.query_v2 import _init_v2
+
+        _init_v2()
+        logger.info("Model preload tamamlandı — ilk istek hazır.")
+    except Exception as exc:
+        # Stack trace ile logla — Qdrant/Groq/.env hatalarının gerçek kaynağı görünür olsun
+        logger.exception("Model preload başarısız (ilk istek tekrar deneyecek): %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="BU Chatbot API", version="2.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
+# ---------------------------------------------------------------------------
+# Input sanitizasyonu
+# ---------------------------------------------------------------------------
+
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _sanitize_input(text: str) -> str:
+    """Kontrol karakterlerini temizle."""
+    return _CONTROL_CHAR_RE.sub("", text).strip()
+
+
+# ---------------------------------------------------------------------------
+# Request / Response modelleri
+# ---------------------------------------------------------------------------
+
+
+class HistoryMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    history: list[HistoryMessage] = []
+
+
+class FeedbackRequest(BaseModel):
+    message_id: int = Field(..., gt=0)
+    is_positive: bool
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint'ler
+# ---------------------------------------------------------------------------
+
+
+@app.post("/ask")
+@limiter.limit("50/minute")
+async def chat(request: Request, body: ChatRequest):
+    start = time.monotonic()
+    error_status: str | None = None
+    result: dict = {}
+    response_payload: dict | None = None
+
+    try:
+        question = _sanitize_input(body.question)
+        if not question:
+            raise HTTPException(status_code=400, detail="Soru boş olamaz.")
+
+        history = [{"role": m.role, "content": m.content} for m in body.history]
+        result = ask_question(question, history)
+        response_payload = {
+            "answer": result["answer"],
+            "sources": result["sources"],
+            "category": result.get("category", "genel"),
+            "engine": result.get("engine", "v1"),
+            "message_id": None,  # finally bloğunda DB kaydından sonra doldurulur
+        }
+        return response_payload
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        error_status = str(e)[:255]
+        logger.error("Servis hatası: %s", e)
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except httpx.TimeoutException as e:
+        error_status = "TimeoutException"
+        raise HTTPException(status_code=504, detail="Arama servisi zaman aşımına uğradı.") from e
+    except Exception as e:
+        error_status = str(e)[:255]
+        logger.error("Beklenmeyen hata: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Yanıt oluşturulurken bir hata oluştu.") from e
+    finally:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        pool = db.get_pool()
+        if pool and result:
+            try:
+                asst_msg_id = await db.log_interaction(
+                    pool,
+                    user_ip=request.client.host if request.client else "unknown",
+                    question=body.question,
+                    answer=result.get("answer", ""),
+                    sources=result.get("sources", []),
+                    latency_ms=latency_ms,
+                    error_status=error_status,
+                )
+                # Yanıt henüz istemciye gönderilmedi (finally return'den önce çalışır):
+                # dict mutasyonu serileştirmeye yansır.
+                if asst_msg_id is not None and response_payload is not None:
+                    response_payload["message_id"] = asst_msg_id
+            except Exception as exc:
+                # Stack trace ile — RLS gibi sessiz fail'lerin kaynağı görünür olsun
+                logger.exception("DB log hatası: %s", exc)
+
+
+@app.post("/feedback")
+@limiter.limit("60/minute")
+async def feedback(request: Request, body: FeedbackRequest):
+    """Bir asistan mesajına like (is_positive=true) veya dislike kaydeder."""
+    pool = db.get_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Geri bildirim servisi şu anda kullanılamıyor.")
+
+    ok = await db.save_feedback(
+        pool,
+        message_id=body.message_id,
+        is_positive=body.is_positive,
+        comment=body.comment,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Geri bildirim kaydedilemedi.")
+    return {"status": "ok"}
+
+
+@app.get("/health")
+@limiter.limit("200/minute")
+async def health(request: Request):
+    checks: dict[str, str] = {"api": "ok"}
+
+    # Groq API key kontrolü
+    checks["groq_key"] = "ok" if os.getenv("GROQ_API_KEY") else "missing"
+
+    # Qdrant bağlantı kontrolü (Cloud URL > Local disk > Host:port)
+    try:
+        from qdrant_client import QdrantClient
+
+        qdrant_url = os.getenv("QDRANT_URL", "")
+        qdrant_path = os.getenv("QDRANT_PATH", "")
+        if qdrant_url:
+            api_key = os.getenv("QDRANT_API_KEY", "") or None
+            client = QdrantClient(url=qdrant_url, api_key=api_key)
+        elif qdrant_path:
+            client = QdrantClient(path=qdrant_path)
+        else:
+            host = os.getenv("QDRANT_HOST", "localhost")
+            port = int(os.getenv("QDRANT_PORT", "6333"))
+            client = QdrantClient(host=host, port=port, timeout=3)
+        client.get_collection("belek_v2")
+        checks["qdrant"] = "ok"
+    except Exception:
+        checks["qdrant"] = "unavailable"
+
+    # PostgreSQL bağlantı kontrolü (opsiyonel — kayıt için kullanılır)
+    pool = db.get_pool()
+    if pool:
+        checks["postgres"] = await db.check_health(pool)
+    else:
+        checks["postgres"] = "disabled"
+
+    # 503 yalnızca kritik bileşenler (api, groq_key, qdrant) için
+    # PostgreSQL opsiyonel: "disabled" veya "unavailable" durumu API'yi servis dışı bırakmaz
+    critical = ("api", "groq_key", "qdrant")
+    all_ok = all(checks.get(k) == "ok" for k in critical)
+    return JSONResponse(checks, status_code=200 if all_ok else 503)
