@@ -22,6 +22,7 @@ Test otomasyon projesini yerel makinenizde ayağa kaldırmak için aşağıdaki 
 
 2. **Gerekli Test Kütüphanelerini İndirin:**
    pip install -r requirements.txt
+   playwright install
 
 3. **Kararlı ve Modüler Test Koşumu:**
    Sistemdeki güvenlik duvarlarının test aracını engellememesi ve Groq (LLM) API kotalarının dolup asılsız test hatalarına (Flaky Tests) yol açmaması için testlerin klasör veya modül bazında ayrı ayrı çalıştırılması zorunludur:
