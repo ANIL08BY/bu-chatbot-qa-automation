@@ -1,48 +1,31 @@
-# Web Framework
-fastapi>=0.129.0,<1.0
-uvicorn[standard]>=0.40.0,<1.0
+# Temel Test Çerçevesi
+pytest
+pytest-asyncio
 
-# LangChain ekosistemi
-langchain>=1.2.0,<2.0
-langchain-community>=0.4.0,<1.0
-langchain-groq>=1.1.0,<2.0
-langchain-huggingface>=1.2.0,<2.0
-langchain-text-splitters>=1.1.0,<2.0
+# Uçtan Uca (E2E) UI Testleri
+playwright
+pytest-playwright
 
-# Alternatif LLM provider'ları (LLM_PROVIDER=openai veya gemini için)
-langchain-openai>=0.2.0,<1.0
-langchain-google-genai>=2.0.0,<3.0
+# API ve Entegrasyon Testleri
+httpx
 
-# Vector DB + Embedding
-qdrant-client>=1.9.0,<2.0
-sentence-transformers>=5.0.0,<6.0
-huggingface-hub>=0.36.0,<1.0
+# Performans ve Yük Testleri
+locust
 
-# PDF çıkarma
-pdfplumber>=0.11.0,<1.0
-pypdf>=6.0.0,<7.0
+# Yapay Zeka Değerlendirme (AI Eval & RAG)
+langchain-core
+langchain-groq
 
-# DOCX çıkarma
-python-docx>=1.2.0,<2.0
+# Test Raporlama
+allure-pytest
 
-# HTML çıkarma
-beautifulsoup4>=4.14.0,<5.0
-lxml>=6.0.0,<7.0
 
-# Web crawl + scraping
-httpx>=0.28.0,<1.0
-firecrawl-py>=1.3.0,<5.0
+# 
+    httpx: test_feedback.py ve test_toxicity.py dosyalarındaki AsyncClient ile sunucuya sanal istekler atmayı sağlayan kütüphane.
 
-# PDF parsing (V2 — Docling + TableFormer)
-docling>=2.5.0,<3.0
+    langchain-groq: Llama 3.1 hakem modelimizi çalıştıran anahtar paket.
 
-# Orchestration (V2 — Dagster)
-dagster>=1.7.0,<2.0
-dagster-webserver>=1.7.0,<2.0
+    langchain-core: Hakem botunu eğitirken kullandığımı "Sadece 0 veya 1 dön" dediğim PromptTemplate yapısını sağlayan çekirdek kütüphane.
 
-# PostgreSQL async sürücüsü
-asyncpg>=0.29.0,<1.0
-
-# Yardımcılar
-python-dotenv>=1.2.0,<2.0
-slowapi>=0.1.9,<1.0
+    pytest-playwright: Playwright'ın Pytest ile tam uyumlu ve sorunsuz çalışmasını (tarayıcı context'lerini yönetmesini) sağlayan eklenti.
+#
