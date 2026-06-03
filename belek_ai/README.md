@@ -4,175 +4,43 @@
 > Yusuf İlbey Aydın'ın bitirme tez projesi.
 
 Belek AI; üniversitenin yönetmelikleri, akademik takvimleri, bölüm/program sayfaları, idari belgeleri ve duyurularına dayalı doğal dil soru-cevap sağlar. Kullanıcı sorduğu soruyu, Qdrant üzerinde **hibrit arama** (dense embedding + BM42 sparse) ile en alakalı belge parçalarına eşleştirir; cross-encoder ile yeniden sıralar; ardından Groq Llama 3.3 70B (veya OpenAI/Gemini) üzerinde, sıkı kurallarla yazılmış bir prompt ile yanıt üretir.
+Belek AI; üniversitenin yönetmelikleri, akademik takvimleri, bölüm/program sayfaları, idari belgeleri ve duyurularına dayalı doğal dil soru-cevap sağlar. Kullanıcı sorduğu soruyu Qdrant üzerinde **dense anlamsal arama** (768d kosinüs, HNSW indeksi) ile en alakalı belge parçalarına eşleştirir; ardından **cross-encoder** (`BAAI/bge-reranker-base`) ile iki aşamalı (retrieve-then-rerank) olarak yeniden sıralar; son olarak Groq Llama 3.3 70B (veya OpenAI/Gemini) üzerinde sıkı kurallarla yazılmış bir prompt ile yanıt üretir. Qdrant koleksiyon şemasında BM42 sparse vektör config'i hazır bulundurulmakta; aktif kullanım yol haritasının ileri sürümüne (v2.1) bırakılmıştır.
 
 ---
 
-## İçindekiler
-
-1. [Proje Amacı](#1-proje-amacı)
-2. [Mimari Özet](#2-mimari-özet)
-3. [Teknoloji Yığını](#3-teknoloji-yığını)
-4. [Hızlı Başlangıç](#4-hızlı-başlangıç)
-5. [Detaylı Kurulum](#5-detaylı-kurulum)
-6. [Çalıştırma](#6-çalıştırma)
-7. [Veri Pipeline'ı](#7-veri-pipelineı-dagster)
-8. [API Sözleşmesi](#8-api-sözleşmesi)
-9. [Konfigürasyon (`.env`)](#9-konfigürasyon-env)
-10. [Test & Kalite](#10-test--kalite)
-11. [Proje Yapısı](#11-proje-yapısı)
-12. [Daha Fazla Bilgi](#12-daha-fazla-bilgi)
-
----
-
-## 1. Proje Amacı
-
-Üniversite öğrencileri ve adayları, akademik yönetmelikler ve idari süreçler hakkında bilgi ararken genellikle uzun PDF'ler ve dağınık web sayfaları arasında kaybolur. Belek AI bu problemi şöyle çözer:
-
-- **Tek arayüz:** Tüm akademik bilgiyi tek bir sohbet arayüzünde topla.
-- **Doğru kaynak:** Yanıtlar yalnızca üniversite belgelerinden üretilir; halüsinasyon (uydurma URL, dosya adı, madde no) prompt seviyesinde engellenir.
-- **Türkçe odaklı:** Türkçe destekli multilingual embedding modeli + Türkçe yazılmış 13 kurallı prompt + Türkçe arayüz.
-- **Asistif davranış:** Belgede olmayan veya öznel sorularda tek satırlık ret yerine, semantik olarak yakın konuları önerir ve diyaloğu sürdürür.
-
----
-
-## 2. Mimari Özet
-
-```
-                                 ╭───────────── Pipeline (Dagster) ──────────────╮
-ingestion_list.json (84 kaynak)  │  Firecrawl  │  Docling  │  Local files       │
-            ───────────────────▶ │   raw_*  →  hash_dedup  →  clean  →  chunk   │
-                                 │                                  ↓            │
-                                 │                          Qdrant Cloud         │
-                                 │                          (dense 768d + BM42)  │
-                                 ╰───────────────────────────────────────────────╯
-                                                  ▲
-                                                  │ retrieval
-                                                  │
-   ┌────────── Frontend ──────────┐   POST /ask  ┌──────────── Backend (FastAPI) ────────┐
-   │ React 19 + Vite + Tailwind   │ ───────────▶ │ analyze_query (Groq llama-3.1-8b)     │
-   │ ChatHeader · ChatMessage     │              │     ↓                                 │
-   │ ChatInput · SettingsModal    │              │ Qdrant hybrid search (k = 5/15/18/40) │
-   │ localStorage persist         │              │     ↓                                 │
-   │ Markdown render + feedback   │              │ Cross-encoder rerank (bge-base)       │
-   └──────────────────────────────┘              │     ↓                                 │
-                                                 │ LLM (Groq/OpenAI/Gemini)              │
-                                                 │     fallback zinciri (429 → next)     │
-                                                 │     ↓                                 │
-                                                 │ PostgreSQL log_interaction (ops.)     │
-                                                 └───────────────────────────────────────┘
-```
-
-**Davranış garantileri:**
-
-- **Sessiz fallback yok.** Qdrant/LLM erişilemezse `RuntimeError → HTTP 503`. Frontend "Tekrar Dene" butonu gösterir.
-- **Halüsinasyon engelleme.** Prompt'ta URL/PDF adı/madde no/telefon/tarih uydurma yasağı — yalnızca DÖKÜMAN'da harfi harfine geçenler aktarılır.
-- **Kategori sızıntısı yok.** LLM yanıta hiçbir zaman kategori adı/etiketi yazmaz; nötr "elimdeki kaynaklarda" ifadesi kullanır.
-
-Detaylı mimari için: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs/RAG_BASELINE.md`](docs/RAG_BASELINE.md)
-
----
-
-## 3. Teknoloji Yığını
-
-| Katman             | Teknoloji                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------ |
-| **Backend**        | FastAPI · Uvicorn · slowapi (rate limit) · python-dotenv                                               |
-| **LLM**            | Groq (Llama 3.3 70B + fallback) · OpenAI (gpt-4o-mini) · Gemini (2.5-flash) — `LLM_PROVIDER` ile seçim |
-| **LLM framework**  | LangChain · langchain-groq · langchain-openai · langchain-google-genai                                 |
-| **Vector DB**      | Qdrant ≥1.9 (Cloud aktif, dense 768d + BM42 sparse)                                                    |
-| **Embedding**      | `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` (Türkçe destekli)                        |
-| **Reranker**       | `BAAI/bge-reranker-base` (cross-encoder, query-time)                                                   |
-| **Pipeline**       | Dagster ≥1.7 (asset DAG, incremental dedup, web UI)                                                    |
-| **PDF**            | Docling + TableFormer ACCURATE · pdfplumber fallback                                                   |
-| **Web scraping**   | Firecrawl · BeautifulSoup4 · lxml                                                                      |
-| **DB (opsiyonel)** | PostgreSQL 13+ · asyncpg (interaksiyon loglama)                                                        |
-| **Frontend**       | React 19 · TypeScript · Vite 7 · Tailwind 3 · axios · react-markdown + remark-gfm · lucide-react       |
-
-Tam sürüm listesi: [`requirements.txt`](requirements.txt) · [`frontend/package.json`](frontend/package.json)
-
----
-
-## 4. Hızlı Başlangıç
-
-> **Ön koşul:** Python 3.11+, Node.js 18+, [Groq API anahtarı](https://console.groq.com), [Qdrant Cloud cluster](https://cloud.qdrant.io) (veya local).
-
-```bash
-# 1. Repo'yu klonla ve .env oluştur
-git clone <repo-url> && cd bu-chatbot
-cp .env.example .env
-# .env'i editöre aç → GROQ_API_KEY, QDRANT_URL, QDRANT_API_KEY doldur
-
-# 2. Backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1                # Windows PS — Linux/Mac: source venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.main:app --reload          # http://127.0.0.1:8000
-
-# 3. Frontend (yeni terminal)
-cd frontend && npm install && npm run dev  # http://localhost:5173
-```
-
-> **Not:** Qdrant Cloud'a `QDRANT_URL` + `QDRANT_API_KEY` ile bağlandığında veri pipeline'ı çalıştırmaya gerek yok (proje sahibinin yüklediği 1582 vektör hazır gelir). Sıfırdan ingest için bkz. §7.
-
----
-
-## 5. Detaylı Kurulum
-
-### 5.1 Python ortamı
-
-```bash
-python -m venv venv
-```
-
-**Aktivasyon:**
-
-```powershell
-# Windows PowerShell
-.\venv\Scripts\Activate.ps1
-```
-
-```cmd
-:: Windows CMD
-venv\Scripts\activate
-```
-
-```bash
-# Linux / macOS
-source venv/bin/activate
-```
-
-```bash
-pip install -r requirements.txt
-```
-
-> İlk kurulumda sentence-transformers + Docling modelleri ~1.5 GB indirebilir. İlk `/ask` isteğinde de embedding + reranker modelleri ısıtılır (~2-5 sn).
-
-### 5.2 `.env` Dosyası
-
-```bash
-cp .env.example .env       # Linux/Mac/Git Bash
-Copy-Item .env.example .env   # Windows PowerShell
-copy .env.example .env     # Windows CMD
-```
-
-Düzenlenmesi gerekenler:
-
-| Değişken                            | Zorunluluk                                                 |
-| ----------------------------------- | ---------------------------------------------------------- |
-| `GROQ_API_KEY`                      | ✅ Daima (analyze_query Groq kullanır)                     |
-| `QDRANT_URL` + `QDRANT_API_KEY`     | ✅ (Cloud — önerilen)                                      |
-| `QDRANT_PATH`                       | Local disk modu (alternatif, `QDRANT_URL` yoksa)           |
-| `FIRECRAWL_API_KEY`                 | Pipeline çalıştırılacaksa                                  |
-| `LLM_PROVIDER`                      | `groq` (default) \| `openai` \| `gemini`                   |
-| `OPENAI_API_KEY` / `GOOGLE_API_KEY` | İlgili provider seçilirse                                  |
-| `DB_*`                              | PostgreSQL kaydı için; herhangi biri boşsa logging kapanır |
-| `CORS_ORIGINS`                      | Default `http://localhost:5173,http://127.0.0.1:5173`      |
-
-Tam liste: [`CLAUDE.md` §10](CLAUDE.md) · Şablon: [`.env.example`](.env.example)
+@@ -43,15 +43,15 @@
+───────────────────▶ │ raw\_\* → hash_dedup → clean → chunk │
+│ ↓ │
+│ Qdrant Cloud │
+│ (dense 768d + BM42) │
+│ (dense 768d cosine) │
+╰───────────────────────────────────────────────╯
+▲
+│ retrieval
+│
+┌────────── Frontend ──────────┐ POST /ask ┌──────────── Backend (FastAPI) ────────┐
+│ React 19 + Vite + Tailwind │ ───────────▶ │ analyze_query (Groq llama-3.1-8b) │
+│ ChatHeader · ChatMessage │ │ ↓ │
+│ ChatInput · SettingsModal │ │ Qdrant hybrid search (k = 5/15/18/40) │
+│ ChatInput · SettingsModal │ │ Qdrant dense search (k = 5/15/18/40) │
+│ localStorage persist │ │ ↓ │
+│ Markdown render + feedback │ │ Cross-encoder rerank (bge-base) │
+└──────────────────────────────┘ │ ↓ │
+@@ -79,7 +79,7 @@
+| **Backend** | FastAPI · Uvicorn · slowapi (rate limit) · python-dotenv |
+| **LLM** | Groq (Llama 3.3 70B + fallback) · OpenAI (gpt-4o-mini) · Gemini (2.5-flash) — `LLM_PROVIDER` ile seçim |
+| **LLM framework** | LangChain · langchain-groq · langchain-openai · langchain-google-genai |
+| **Vector DB** | Qdrant ≥1.9 (Cloud aktif, dense 768d + BM42 sparse) |
+| **Vector DB** | Qdrant ≥1.9 (Cloud aktif, dense 768d kosinüs, HNSW) |
+| **Embedding** | `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` (Türkçe destekli) |
+| **Reranker** | `BAAI/bge-reranker-base` (cross-encoder, query-time) |
+| **Pipeline** | Dagster ≥1.7 (asset DAG, incremental dedup, web UI) |
+@@ -170,300 +170,328 @@
 
 ### 5.3 (Opsiyonel) PostgreSQL Şeması
 
 İnteraksiyon loglaması istiyorsan `belek_chatbot` şemasını kur:
+İnteraksiyon loglaması istiyorsan `belek_chatbot` şemasını kur. Aşağıdaki DDL **canlı veritabanı (Neon) şemasıyla birebir** uyumludur; her tablo işlevsel sütunların yanında ortak denetim (audit) sütunları içerir.
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS belek_chatbot;
@@ -182,6 +50,15 @@ CREATE TABLE sessions (
   id SERIAL PRIMARY KEY,
   user_ip VARCHAR(45) NOT NULL,
   start_time TIMESTAMP NOT NULL DEFAULT NOW()
+  id          SERIAL PRIMARY KEY,
+  user_ip     VARCHAR(45) NOT NULL,
+  start_time  TIMESTAMP   NOT NULL DEFAULT NOW(),
+  -- audit
+  is_active   BOOLEAN   DEFAULT TRUE,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by  INTEGER,
+  updated_at  TIMESTAMP,
+  updated_by  INTEGER
 );
 CREATE TABLE messages (
   id SERIAL PRIMARY KEY,
@@ -189,26 +66,64 @@ CREATE TABLE messages (
   role VARCHAR(50) NOT NULL,
   content TEXT NOT NULL,
   timestamp TIMESTAMP NOT NULL DEFAULT NOW()
+  id          SERIAL PRIMARY KEY,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id),
+  role        VARCHAR(50) NOT NULL,            -- 'user' | 'assistant' (CHECK yok)
+  content     TEXT NOT NULL,
+  timestamp   TIMESTAMP NOT NULL DEFAULT NOW(),
+  is_active   BOOLEAN   DEFAULT TRUE,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by  INTEGER,
+  updated_at  TIMESTAMP,
+  updated_by  INTEGER
 );
 CREATE TABLE citations (
   id SERIAL PRIMARY KEY,
   message_id INTEGER NOT NULL REFERENCES messages(id),
   doc_name VARCHAR(255) NOT NULL,
   page_num INTEGER
+  id          SERIAL PRIMARY KEY,
+  message_id  INTEGER NOT NULL REFERENCES messages(id),
+  doc_name    VARCHAR(255) NOT NULL,
+  page_num    INTEGER,
+  is_active   BOOLEAN   DEFAULT TRUE,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by  INTEGER,
+  updated_at  TIMESTAMP,
+  updated_by  INTEGER
 );
 CREATE TABLE feedback (
   id SERIAL PRIMARY KEY,
   message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id),
+  id          SERIAL PRIMARY KEY,
+  message_id  INTEGER NOT NULL UNIQUE REFERENCES messages(id),
   is_positive BOOLEAN NOT NULL,
   comment TEXT
+  comment     TEXT,
+  is_active   BOOLEAN   DEFAULT TRUE,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by  INTEGER,
+  updated_at  TIMESTAMP,
+  updated_by  INTEGER
 );
 CREATE TABLE system_logs (
   id SERIAL PRIMARY KEY,
   message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id),
   latency_ms INTEGER,
   error_status VARCHAR(255)
+  id           SERIAL PRIMARY KEY,
+  message_id   INTEGER NOT NULL UNIQUE REFERENCES messages(id),
+  latency_ms   INTEGER,
+  error_status VARCHAR(255),
+  is_active    BOOLEAN   DEFAULT TRUE,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by   INTEGER,
+  updated_at   TIMESTAMP,
+  updated_by   INTEGER
 );
 ```
+
+> **Denetim (audit) sütunları:** `created_at` ve `is_active` veritabanı varsayılanlarıyla otomatik dolar. `created_by`/`updated_by`/`updated_at` alanları uygulama tarafından yazılmaz (kullanıcı kimlik doğrulaması v2.1'e ertelenmiştir) → NULL kalır. Canlı şemada `created_by`/`updated_by`, kullanıcı tablosuna `ON DELETE SET NULL` ile bağlı INTEGER yabancı anahtarlardır. `backend/db.py` yalnızca işlevsel sütunlara INSERT yapar; audit sütunları varsayılan/NULL üzerinden çalışır.
 
 > **RLS Uyarısı** (Supabase vb.): `db.py` `INSERT INTO belek_chatbot.*` yazar. RLS aktifse bot kullanıcısına ya `ALTER USER bot_user BYPASSRLS;` ver, ya da açık INSERT policy yaz. Aksi halde `log_interaction()` sessizce fail eder (loglarda stack trace görünür).
 
