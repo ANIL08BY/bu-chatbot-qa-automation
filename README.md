@@ -67,6 +67,10 @@ Test projesini yerel makinenizde ayağa kaldırmak için aşağıdaki adımları
 
    python -m locust -f tests/performance/locustfile.py
 
+   # 8. Allure Raporlaması
+
+   Test komutlarının sonuna --alluredir=allure-results ekleyerek komutları çalıştırılmalıdır. Tüm testler sonlanınca allure serve allure-results komutu kullanılarak test sonuçları Allure Dashboard'da raporlanmaktadır (aktarılmaktadır).
+
 ## Sistem Genel Mimarisi
 
 Aşağıdaki diyagramda, geliştirdiğimiz QA test ekosisteminin, Yusuf tarafından geliştirilen ana chatbot çekirdek sistemi (React, FastAPI, PostgreSQL, Qdrant) ile nasıl entegre olduğu ve hangi katmanı nasıl denetlediği modellenmiştir:
